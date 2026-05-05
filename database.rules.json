@@ -1,0 +1,58 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      ".indexOn": ["points", "email"],
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'teacher'",
+        ".validate": "newData.hasChildren(['email', 'role', 'points'])"
+      }
+    },
+
+    "dailyChallenges": {
+      "$dateKey": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'teacher'"
+      }
+    },
+
+    "challengeAnswers": {
+      "$dateKey": {
+        ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'teacher'",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'teacher'"
+      }
+    },
+
+    "submissions": {
+      "$submissionId": {
+        ".read": "auth != null && (data.child('uid').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+        ".write": "auth != null && (!data.exists() && newData.child('uid').val() == auth.uid && newData.child('status').val() == 'pending')"
+      }
+    },
+
+    "challengeWinners": {
+      "$winnerId": {
+        ".read": "auth != null",
+        ".write": false
+      }
+    },
+
+    "auctions": {
+      ".read": "auth != null",
+      ".indexOn": ["visible", "endsAt"],
+      "$auctionId": {
+        ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'teacher'"
+      }
+    },
+
+    "bids": {
+      "$bidId": {
+        ".read": "auth != null && (data.child('uid').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+        ".write": "auth != null && !data.exists() && newData.child('uid').val() == auth.uid && newData.child('amount').isNumber() && newData.child('amount').val() > 0"
+      }
+    }
+  }
+}
