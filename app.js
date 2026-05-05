@@ -80,6 +80,7 @@ let db;
 let currentUser = null;
 let currentProfile = null;
 let currentChallengeId = null;
+let currentChallenge = null;
 let selectedProduct = null;
 let unsubscribers = [];
 
@@ -103,6 +104,7 @@ if (setupRequired) {
   loginForm.addEventListener("submit", handleLogin);
   signupForm.addEventListener("submit", handleSignup);
   logoutButton.addEventListener("click", () => signOut(auth));
+  answerInput.addEventListener("input", () => setMessage(answerMessage, ""));
   answerForm.addEventListener("submit", handleAnswerSubmit);
   challengeForm.addEventListener("submit", handleChallengeSave);
   productForm.addEventListener("submit", handleProductSave);
@@ -283,6 +285,7 @@ function subscribeChallenge() {
   const unsubscribe = onValue(challengeRef, (snapshot) => {
     if (!snapshot.exists()) {
       currentChallengeId = null;
+      currentChallenge = null;
       challengeDate.textContent = today;
       challengeStatus.textContent = "아직 공개 전";
       challengeTitle.textContent = "오늘의 문제가 아직 등록되지 않았습니다.";
@@ -295,11 +298,13 @@ function subscribeChallenge() {
 
     const challenge = snapshot.val();
     currentChallengeId = snapshot.key;
+    currentChallenge = challenge;
     challengeDate.textContent = today;
     challengeStatus.textContent = challenge.status === "open" ? "제출 가능" : "마감";
     challengeTitle.textContent = challenge.title;
     challengeDescription.textContent = challenge.description;
     renderImage(challengeImage, challenge.imageUrl);
+    setMessage(answerMessage, "");
     answerForm.querySelector("button").disabled = challenge.status !== "open";
   });
   unsubscribers.push(unsubscribe);
@@ -455,17 +460,65 @@ async function handleAnswerSubmit(event) {
   const answer = answerInput.value.trim();
   if (!answer) return;
 
-  const submissionRef = push(ref(db, "submissions"));
-  await set(submissionRef, {
+  if (!currentChallenge?.answerHash) {
+    setMessage(answerMessage, "아직 자동 채점용 정답이 등록되지 않았습니다.");
+    return;
+  }
+
+  try {
+    setMessage(answerMessage, "채점하는 중입니다.");
+    const submittedHash = await hashText(normalizeAnswer(answer));
+    const isCorrect = submittedHash === currentChallenge.answerHash;
+
+    await saveSubmission(answer, isCorrect ? "correct" : "wrong");
+
+    if (!isCorrect) {
+      setMessage(answerMessage, "틀렸어요. 답을 고쳐서 다시 제출할 수 있습니다.");
+      return;
+    }
+
+    const existingResult = await get(ref(db, `challengeResults/${currentChallengeId}/${currentUser.uid}`));
+    if (existingResult.exists() && existingResult.val()?.status === "correct") {
+      answerInput.value = "";
+      setMessage(answerMessage, "이미 정답 처리되었습니다. 포인트는 한 번만 지급됩니다.");
+      return;
+    }
+
+    const counterResult = await runTransaction(ref(db, `scoreCounters/${currentChallengeId}/correctCount`), (currentCount) => {
+      return Number(currentCount ?? 0) + 1;
+    });
+    const rank = Number(counterResult.snapshot.val() ?? 1);
+    const awardedPoints = Math.max(0, 150 - (rank - 1) * 5);
+
+    await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
+      return Number(currentPoints ?? 0) + awardedPoints;
+    });
+
+    await set(ref(db, `challengeResults/${currentChallengeId}/${currentUser.uid}`), {
+      uid: currentUser.uid,
+      challengeId: currentChallengeId,
+      status: "correct",
+      rank,
+      awardedPoints,
+      answer,
+      createdAt: serverTimestamp(),
+    });
+
+    answerInput.value = "";
+    setMessage(answerMessage, `정답입니다! ${rank}번째 정답으로 ${awardedPoints}점을 받았습니다.`);
+  } catch (error) {
+    setMessage(answerMessage, authErrorMessage(error.code));
+  }
+}
+
+async function saveSubmission(answer, status) {
+  await set(push(ref(db, "submissions")), {
     challengeId: currentChallengeId,
     uid: currentUser.uid,
     answer,
-    status: "pending",
+    status,
     createdAt: serverTimestamp(),
   });
-
-  answerInput.value = "";
-  setMessage(answerMessage, "제출되었습니다.");
 }
 
 async function handleChallengeSave(event) {
@@ -478,6 +531,7 @@ async function handleChallengeSave(event) {
     const title = $("#admin-challenge-title").value.trim();
     const description = $("#admin-challenge-description").value.trim();
     const answer = $("#admin-answer").value.trim();
+    const answerHash = answer ? await hashText(normalizeAnswer(answer)) : "";
     const imageUrl = await getImageValue("#admin-challenge-image-url", "#admin-challenge-image-file");
 
     await update(ref(db), {
@@ -485,6 +539,8 @@ async function handleChallengeSave(event) {
         title,
         description,
         imageUrl,
+        answerHash,
+        correctCount: 0,
         status: "open",
         createdBy: currentUser.uid,
         updatedAt: serverTimestamp(),
@@ -560,6 +616,21 @@ function renderImage(imageElement, imageUrl) {
   }
   imageElement.src = imageUrl;
   imageElement.hidden = false;
+}
+
+function normalizeAnswer(value) {
+  return String(value)
+    .trim()
+    .replace(/\s+/g, "")
+    .toLocaleLowerCase("ko-KR");
+}
+
+async function hashText(value) {
+  const bytes = new TextEncoder().encode(value);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hashBuffer)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function isTeacher(profile, user) {
