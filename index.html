@@ -4,55 +4,61 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>아침 창의력 챌린지</title>
-    <link rel="stylesheet" href="styles.css" />
-    <script type="module" src="app.js"></script>
+    <link rel="stylesheet" href="styles.css?v=20260505-admin" />
+    <script type="module" src="app.js?v=20260505-admin"></script>
   </head>
   <body>
     <main>
       <section id="auth-screen" class="auth-screen">
-        <div class="brand-panel">
+        <div class="auth-hero">
           <p class="eyebrow">Morning Quest</p>
           <h1>아침 창의력 챌린지</h1>
-          <p>매일 아침 문제를 풀고 포인트를 모아 경매에 참여하세요.</p>
+          <p>매일 한 문제, 빠른 정답, 포인트 경매까지 한 번에 확인하세요.</p>
         </div>
 
-        <section class="auth-card" aria-label="로그인과 회원가입">
-          <div class="auth-tabs" role="tablist">
-            <button id="login-tab" class="active" type="button">로그인</button>
-            <button id="signup-tab" type="button">회원가입</button>
-          </div>
-
-          <form id="login-form" class="auth-form">
+        <section class="auth-card" aria-label="로그인">
+          <h2>로그인</h2>
+          <form id="login-form" class="stack-form">
             <label>
-              이메일
-              <input id="login-email" type="email" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="email" required />
+              아이디 또는 이메일
+              <input id="login-email" type="text" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="username" required />
             </label>
             <label>
               비밀번호
               <input id="login-password" type="password" placeholder="비밀번호" autocomplete="current-password" required />
             </label>
-            <button type="submit">들어가기</button>
+            <button class="primary-button" type="submit">들어가기</button>
           </form>
-
-          <form id="signup-form" class="auth-form" hidden>
-            <label>
-              이름 또는 번호
-              <input id="signup-name" type="text" placeholder="1번 김민준" autocomplete="name" required />
-            </label>
-            <label>
-              이메일
-              <input id="signup-email" type="email" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="email" required />
-            </label>
-            <label>
-              비밀번호
-              <input id="signup-password" type="password" placeholder="6자 이상" autocomplete="new-password" minlength="6" required />
-            </label>
-            <button type="submit">가입하고 시작하기</button>
-          </form>
-
-          <p id="auth-message" class="helper-text">처음이면 회원가입, 이미 가입했다면 로그인하세요.</p>
+          <button id="open-signup-button" class="secondary-button" type="button">회원가입</button>
+          <p id="auth-message" class="helper-text">선생님은 admin@admin / kdyn1717로 들어가세요.</p>
         </section>
       </section>
+
+      <dialog id="signup-dialog" class="signup-dialog">
+        <form id="signup-form" class="stack-form" method="dialog">
+          <div class="dialog-head">
+            <div>
+              <p class="eyebrow">Sign Up</p>
+              <h2>회원가입</h2>
+            </div>
+            <button id="close-signup-button" class="icon-button" type="button" aria-label="닫기">×</button>
+          </div>
+          <label>
+            이름 또는 번호
+            <input id="signup-name" type="text" placeholder="1번 김민준" autocomplete="name" required />
+          </label>
+          <label>
+            이메일
+            <input id="signup-email" type="email" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="email" required />
+          </label>
+          <label>
+            비밀번호
+            <input id="signup-password" type="password" placeholder="6자 이상" autocomplete="new-password" minlength="6" required />
+          </label>
+          <button class="primary-button" type="submit">가입하고 시작하기</button>
+          <p id="signup-message" class="helper-text">가입하면 자동으로 로그인됩니다.</p>
+        </form>
+      </dialog>
 
       <section id="app-shell" class="app-shell" hidden>
         <header class="app-header">
@@ -60,27 +66,29 @@
             <p id="today-label" class="eyebrow">Today</p>
             <h1 id="page-title">오늘의 문제</h1>
           </div>
-          <button id="logout-button" class="icon-text-button" type="button">나가기</button>
+          <button id="logout-button" class="small-button" type="button">나가기</button>
         </header>
 
         <section id="home-page" class="page active-page" data-page="home">
-          <article class="summary-card">
-            <p class="eyebrow">My Points</p>
-            <h2><span id="my-points">0</span>점</h2>
-            <p id="profile-message">오늘도 좋은 출발입니다.</p>
+          <article class="points-card">
+            <div>
+              <p class="eyebrow">My Points</p>
+              <h2><span id="my-points">0</span>점</h2>
+            </div>
+            <p id="profile-message">오늘 문제를 확인해보세요.</p>
           </article>
 
           <article class="question-card">
-            <div class="row-between">
+            <div class="card-topline">
               <span id="challenge-date">오늘</span>
-              <span id="challenge-status" class="pill">문제 불러오는 중</span>
+              <span id="challenge-status" class="pill">불러오는 중</span>
             </div>
             <h2 id="challenge-title">오늘의 문제가 아직 등록되지 않았습니다.</h2>
             <p id="challenge-description">선생님이 문제를 등록하면 여기에 표시됩니다.</p>
-            <form id="answer-form" class="answer-form">
+            <form id="answer-form" class="stack-form">
               <label for="answer">내 답변</label>
               <textarea id="answer" rows="5" placeholder="답을 입력하세요" required></textarea>
-              <button type="submit">정답 제출</button>
+              <button class="primary-button" type="submit">정답 제출</button>
               <p id="answer-message" class="helper-text"></p>
             </form>
           </article>
@@ -113,20 +121,37 @@
           </div>
           <article class="profile-card">
             <dl>
-              <div>
-                <dt>이름</dt>
-                <dd id="profile-name">-</dd>
-              </div>
-              <div>
-                <dt>이메일</dt>
-                <dd id="profile-email">-</dd>
-              </div>
-              <div>
-                <dt>포인트</dt>
-                <dd><span id="profile-points">0</span>점</dd>
-              </div>
+              <div><dt>이름</dt><dd id="profile-name">-</dd></div>
+              <div><dt>아이디</dt><dd id="profile-email">-</dd></div>
+              <div><dt>역할</dt><dd id="profile-role">-</dd></div>
+              <div><dt>포인트</dt><dd><span id="profile-points">0</span>점</dd></div>
             </dl>
           </article>
+        </section>
+
+        <section id="admin-page" class="page" data-page="admin">
+          <div class="section-title"><p class="eyebrow">Teacher</p><h2>선생님 관리</h2></div>
+          <article class="admin-card">
+            <h3>오늘 문제 만들기</h3>
+            <form id="challenge-form" class="stack-form">
+              <label>날짜<input id="admin-challenge-date" type="date" required /></label>
+              <label>문제 제목<input id="admin-challenge-title" type="text" placeholder="오늘의 문제" required /></label>
+              <label>설명<textarea id="admin-challenge-description" rows="4" placeholder="문제 설명을 적어주세요" required></textarea></label>
+              <label>정답 키워드<input id="admin-answer-keywords" type="text" placeholder="삼각형, 안정" /></label>
+              <button class="primary-button" type="submit">문제 저장</button>
+            </form>
+          </article>
+          <article class="admin-card">
+            <h3>경매 상품 만들기</h3>
+            <form id="auction-form" class="stack-form">
+              <label>상품명<input id="admin-auction-title" type="text" placeholder="매점 간식 교환권" required /></label>
+              <label>분류<input id="admin-auction-category" type="text" placeholder="간식" required /></label>
+              <label>시작가<input id="admin-auction-price" type="number" min="1" value="50" required /></label>
+              <label>마감 시간<input id="admin-auction-end" type="datetime-local" required /></label>
+              <button class="primary-button" type="submit">상품 저장</button>
+            </form>
+          </article>
+          <p id="admin-message" class="helper-text"></p>
         </section>
 
         <nav class="bottom-nav" aria-label="메뉴">
@@ -134,6 +159,7 @@
           <button type="button" data-target-page="leaderboard">순위</button>
           <button type="button" data-target-page="auction">경매</button>
           <button type="button" data-target-page="profile">내 정보</button>
+          <button id="admin-nav-button" type="button" data-target-page="admin" hidden>관리</button>
         </nav>
       </section>
     </main>
