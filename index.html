@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>아침 창의력 챌린지</title>
     <meta http-equiv="Cache-Control" content="no-store" />
-    <link rel="stylesheet" href="styles.css?v=20260506-store" />
-    <script type="module" src="app.js?v=20260506-scoring"></script>
+    <link rel="stylesheet" href="styles.css?v=20260506-purchase-history" />
+    <script type="module" src="app.js?v=20260506-purchase-history"></script>
   </head>
   <body>
     <main>
@@ -95,6 +95,12 @@
             </dl>
             <button id="logout-button" class="secondary-button profile-logout" type="button">나가기</button>
           </article>
+          <article class="profile-card">
+            <h3>구매 내역</h3>
+            <div id="purchase-history-list" class="history-list">
+              <p class="empty-text">아직 구매한 상품이 없습니다.</p>
+            </div>
+          </article>
         </section>
 
         <section id="admin-page" class="page" data-page="admin">
@@ -110,6 +116,7 @@
               <label>정답<input id="admin-answer" type="text" placeholder="선생님만 볼 정답" /></label>
               <button class="primary-button" type="submit">문제 저장</button>
             </form>
+            <button id="delete-challenge-button" class="danger-button" type="button">선택한 날짜 문제 삭제</button>
           </article>
           <article class="admin-card">
             <h3>상점 상품 추가</h3>

@@ -53,11 +53,12 @@
       ".read": "auth != null",
       ".indexOn": ["createdAt", "visible"],
       "$productId": {
-        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')"
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (data.exists() && newData.child('visible').val() == false && newData.child('purchasedBy').val() == auth.uid))"
       }
     },
 
     "purchases": {
+      ".read": "auth != null",
       "$purchaseId": {
         ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
         ".write": "auth != null && !data.exists() && newData.child('uid').val() == auth.uid && newData.child('price').isNumber() && newData.child('price').val() > 0"

@@ -196,6 +196,15 @@ label {
   color: var(--ink);
 }
 
+.danger-button {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #be123c;
+}
+
 .helper-text,
 .empty-text {
   margin: 12px 0 0;
@@ -338,17 +347,26 @@ label {
 }
 
 .rank-list,
-.store-list {
+.store-list,
+.history-list {
   display: grid;
   gap: 10px;
 }
 
-.rank-item {
+.rank-item,
+.history-item {
   display: grid;
   grid-template-columns: 42px 1fr auto;
   align-items: center;
   gap: 12px;
   padding: 14px;
+}
+
+.history-item {
+  grid-template-columns: 1fr auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
 }
 
 .rank-number {
