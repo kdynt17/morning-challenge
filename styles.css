@@ -214,11 +214,28 @@ textarea {
   margin-top: 18px;
 }
 
+.ghost-button {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
+}
+
 .login-panel p {
   margin: 14px 0 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.form-message {
+  min-height: 22px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .section {
