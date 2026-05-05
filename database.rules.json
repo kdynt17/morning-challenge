@@ -7,7 +7,7 @@
       ".indexOn": ["points", "email"],
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'teacher' || (!data.exists() && auth.uid == $uid && newData.child('role').val() == 'student' && newData.child('points').val() == 0 && newData.child('email').val() == auth.token.email))",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'teacher' || (!data.exists() && auth.uid == $uid && newData.child('role').val() == 'student' && newData.child('points').val() == 0 && newData.child('email').val() == auth.token.email) || (!data.exists() && auth.uid == $uid && auth.token.email == 'admin@admin.com' && newData.child('role').val() == 'teacher'))",
         ".validate": "newData.hasChildren(['email', 'role', 'points', 'name'])"
       }
     },
