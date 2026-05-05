@@ -125,7 +125,7 @@ label {
 .question-card,
 .profile-card,
 .rank-item,
-.auction-item,
+.product-card,
 .admin-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -139,7 +139,6 @@ label {
 }
 
 .auth-card h2,
-.dialog-head h2,
 .admin-card h3 {
   margin: 0 0 16px;
 }
@@ -174,11 +173,6 @@ label {
   display: block;
 }
 
-#auth-screen .auth-card > #signup-form,
-#auth-screen .auth-card > .stack-form#signup-form {
-  display: none !important;
-}
-
 .stack-form {
   display: grid;
   gap: 14px;
@@ -210,27 +204,20 @@ label {
   line-height: 1.5;
 }
 
-.signup-dialog {
-  width: min(92vw, 440px);
+.product-dialog {
+  width: min(92vw, 460px);
   border: 0;
   border-radius: 8px;
   padding: 18px;
   box-shadow: 0 24px 80px rgba(21, 32, 51, 0.26);
 }
 
-.signup-dialog:not([open]) {
+.product-dialog:not([open]) {
   display: none;
 }
 
-.signup-dialog::backdrop {
+.product-dialog::backdrop {
   background: rgba(21, 32, 51, 0.42);
-}
-
-.dialog-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 14px;
 }
 
 .icon-button {
@@ -239,6 +226,12 @@ label {
   background: var(--soft);
   color: var(--ink);
   font-size: 24px;
+}
+
+.dialog-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
 }
 
 .app-shell {
@@ -345,7 +338,7 @@ label {
 }
 
 .rank-list,
-.auction-list {
+.store-list {
   display: grid;
   gap: 10px;
 }
@@ -369,13 +362,13 @@ label {
 }
 
 .rank-name,
-.auction-item h3 {
+.product-card h3 {
   margin: 0;
   font-weight: 900;
 }
 
 .rank-meta,
-.auction-item p {
+.product-card p {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 13px;
@@ -385,35 +378,80 @@ label {
   font-weight: 900;
 }
 
-.auction-item {
+.product-card {
   overflow: hidden;
 }
 
-.auction-visual {
+.product-image,
+.dialog-image,
+.content-image {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.content-image {
+  max-height: 260px;
+  margin: 12px 0;
+}
+
+.product-image {
+  height: 160px;
+  border-radius: 0;
+}
+
+.dialog-image {
+  max-height: 240px;
+  margin-bottom: 14px;
+}
+
+.product-placeholder {
   display: grid;
-  min-height: 96px;
+  min-height: 150px;
   place-items: center;
   color: #ffffff;
   font-size: 24px;
   font-weight: 900;
+  background: linear-gradient(135deg, var(--green), var(--blue));
 }
 
-.auction-body {
+.product-body {
   display: grid;
   gap: 10px;
   padding: 14px;
 }
 
-.color-green {
-  background: linear-gradient(135deg, var(--green), #65a30d);
+.product-body button {
+  min-height: 44px;
+  background: #e8f0ff;
+  color: var(--blue);
 }
 
-.color-blue {
-  background: linear-gradient(135deg, var(--blue), #0891b2);
+.purchase-box {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--ink);
+  font-weight: 900;
 }
 
-.color-red {
-  background: linear-gradient(135deg, var(--red), #f97316);
+.purchase-box p {
+  margin: 0;
+}
+
+.product-dialog h2 {
+  margin: 8px 42px 8px 0;
+}
+
+.product-dialog > p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .profile-card dl {

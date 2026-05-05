@@ -16,6 +16,7 @@ import {
   push,
   query,
   ref,
+  runTransaction,
   serverTimestamp,
   set,
   update,
@@ -25,6 +26,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
 const ADMIN_LOGIN = "admin@admin";
 const ADMIN_AUTH_EMAIL = "admin@admin.com";
+const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 
 const $ = (selector) => document.querySelector(selector);
 const setupRequired = firebaseConfig.apiKey.startsWith("PASTE_");
@@ -46,9 +48,10 @@ const answerMessage = $("#answer-message");
 const challengeDate = $("#challenge-date");
 const challengeStatus = $("#challenge-status");
 const challengeTitle = $("#challenge-title");
+const challengeImage = $("#challenge-image");
 const challengeDescription = $("#challenge-description");
 const leaderboardList = $("#leaderboard-list");
-const auctionList = $("#auction-list");
+const storeList = $("#store-list");
 const pageTitle = $("#page-title");
 const todayLabel = $("#today-label");
 const myPoints = $("#my-points");
@@ -59,8 +62,17 @@ const profileRole = $("#profile-role");
 const profilePoints = $("#profile-points");
 const adminNavButton = $("#admin-nav-button");
 const challengeForm = $("#challenge-form");
-const auctionForm = $("#auction-form");
+const productForm = $("#product-form");
 const adminMessage = $("#admin-message");
+const productDialog = $("#product-dialog");
+const dialogProductImage = $("#dialog-product-image");
+const dialogProductPrice = $("#dialog-product-price");
+const dialogProductTitle = $("#dialog-product-title");
+const dialogProductDescription = $("#dialog-product-description");
+const dialogBalance = $("#dialog-balance");
+const dialogAfterBalance = $("#dialog-after-balance");
+const buyProductButton = $("#buy-product-button");
+const purchaseMessage = $("#purchase-message");
 const navButtons = document.querySelectorAll("[data-target-page]");
 
 let auth;
@@ -68,12 +80,13 @@ let db;
 let currentUser = null;
 let currentProfile = null;
 let currentChallengeId = null;
+let selectedProduct = null;
 let unsubscribers = [];
 
 const pageNames = {
   home: "오늘의 문제",
   leaderboard: "포인트 순위",
-  auction: "포인트 경매장",
+  store: "포인트 상점",
   profile: "내 정보",
   admin: "선생님 관리",
 };
@@ -92,45 +105,41 @@ if (setupRequired) {
   logoutButton.addEventListener("click", () => signOut(auth));
   answerForm.addEventListener("submit", handleAnswerSubmit);
   challengeForm.addEventListener("submit", handleChallengeSave);
-  auctionForm.addEventListener("submit", handleAuctionSave);
+  productForm.addEventListener("submit", handleProductSave);
+  buyProductButton.addEventListener("click", handlePurchase);
 
   navButtons.forEach((button) => {
     button.addEventListener("click", () => showPage(button.dataset.targetPage));
   });
 
   $("#admin-challenge-date").value = getKoreaDateKey();
+  setAuthMode("login");
 
   onAuthStateChanged(auth, async (user) => {
     clearSubscriptions();
     currentUser = user;
+    currentProfile = null;
+    selectedProduct = null;
 
     if (!user) {
-      document.body.classList.remove("is-authenticated");
-      authScreen.hidden = false;
-      authScreen.style.display = "";
-      appShell.hidden = true;
-      appShell.style.display = "none";
-      setAuthMode("login");
-      setMessage(authMessage, "학생은 회원가입 후 바로 들어갈 수 있습니다. 선생님 계정은 admin@admin으로 로그인하세요.");
+      showSignedOut();
       return;
     }
 
-    document.body.classList.add("is-authenticated");
-    authScreen.hidden = true;
-    authScreen.style.display = "none";
-    appShell.hidden = false;
-    appShell.style.display = "";
+    showSignedIn();
     currentProfile = await ensureProfile(user);
     renderProfile(user, currentProfile);
     showPage("home");
+    subscribeProfile();
     subscribeChallenge();
     subscribeLeaderboard();
-    subscribeAuctions();
+    subscribeStore();
   });
 }
 
 async function handleLogin(event) {
   event.preventDefault();
+  setMessage(authMessage, "로그인하는 중입니다.");
   const rawLogin = $("#login-email").value.trim();
   const password = $("#login-password").value;
   const email = normalizeLoginEmail(rawLogin);
@@ -149,11 +158,13 @@ async function handleSignup(event) {
   const password = $("#signup-password").value;
 
   try {
+    setMessage(signupMessage, "가입하는 중입니다.");
     const credential = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(credential.user, { displayName: name });
     await set(ref(db, `users/${credential.user.uid}`), {
       name,
       email,
+      authEmail: credential.user.email,
       role: "student",
       points: 0,
       todayResult: "-",
@@ -166,42 +177,65 @@ async function handleSignup(event) {
 }
 
 async function ensureProfile(user) {
-  const snapshot = await get(ref(db, `users/${user.uid}`));
+  const userRef = ref(db, `users/${user.uid}`);
+  const snapshot = await get(userRef);
+  const isAdmin = user.email === ADMIN_AUTH_EMAIL;
+
   if (snapshot.exists()) {
     const profile = snapshot.val();
-    if ((!profile.name || profile.name === "학생") && user.displayName) {
-      const updatedProfile = { ...profile, name: user.displayName };
-      await update(ref(db, `users/${user.uid}`), { name: user.displayName });
-      return updatedProfile;
+    const updates = {};
+
+    if (isAdmin && profile.role !== "teacher") {
+      updates.role = "teacher";
+      updates.name = "선생님";
+      updates.email = ADMIN_LOGIN;
+      updates.authEmail = ADMIN_AUTH_EMAIL;
+    }
+    if (!profile.name && user.displayName) updates.name = user.displayName;
+
+    if (Object.keys(updates).length) {
+      await update(userRef, updates);
+      return { ...profile, ...updates };
     }
     return profile;
   }
 
-  const isAdmin = user.email === ADMIN_AUTH_EMAIL;
   const profile = {
     name: isAdmin ? "선생님" : user.displayName || "학생",
     email: isAdmin ? ADMIN_LOGIN : user.email,
     authEmail: user.email,
-    role: "student",
+    role: isAdmin ? "teacher" : "student",
     points: 0,
     todayResult: "-",
     createdAt: serverTimestamp(),
   };
-  await set(ref(db, `users/${user.uid}`), profile);
+  await set(userRef, profile);
   return profile;
+}
+
+function subscribeProfile() {
+  const unsubscribe = onValue(ref(db, `users/${currentUser.uid}`), (snapshot) => {
+    if (!snapshot.exists()) return;
+    currentProfile = snapshot.val();
+    renderProfile(currentUser, currentProfile);
+  });
+  unsubscribers.push(unsubscribe);
 }
 
 function renderProfile(user, profile) {
   const name = profile?.name || user.displayName || "학생";
-  const role = profile?.role ?? "student";
+  const teacher = isTeacher(profile, user);
   const points = Number(profile?.points ?? 0);
+
   myPoints.textContent = points;
-  profileMessage.textContent = role === "teacher" ? "문제와 경매 상품을 등록할 수 있습니다." : `${name} 님, 오늘 문제를 확인해보세요.`;
+  profileMessage.textContent = teacher
+    ? "문제와 상점 상품을 등록할 수 있습니다."
+    : `${name} 님, 오늘 문제를 확인해보세요.`;
   profileName.textContent = name;
   profileEmail.textContent = profile?.email ?? user.email;
-  profileRole.textContent = role === "teacher" ? "선생님" : "학생";
+  profileRole.textContent = teacher ? "선생님" : "학생";
   profilePoints.textContent = points;
-  adminNavButton.hidden = role !== "teacher";
+  adminNavButton.hidden = !teacher;
 }
 
 function setAuthMode(mode) {
@@ -213,6 +247,20 @@ function setAuthMode(mode) {
   showLoginButton.setAttribute("aria-selected", String(!isSignup));
   showSignupButton.setAttribute("aria-selected", String(isSignup));
   setMessage(authMessage, isSignup ? "처음이면 이름, 이메일, 비밀번호를 입력하세요." : "이메일과 비밀번호로 로그인하세요.");
+}
+
+function showSignedIn() {
+  document.body.classList.add("is-authenticated");
+  authScreen.hidden = true;
+  appShell.hidden = false;
+}
+
+function showSignedOut() {
+  document.body.classList.remove("is-authenticated");
+  authScreen.hidden = false;
+  appShell.hidden = true;
+  setAuthMode("login");
+  setMessage(authMessage, "이메일과 비밀번호로 로그인하세요.");
 }
 
 function showPage(page) {
@@ -239,6 +287,8 @@ function subscribeChallenge() {
       challengeStatus.textContent = "아직 공개 전";
       challengeTitle.textContent = "오늘의 문제가 아직 등록되지 않았습니다.";
       challengeDescription.textContent = "선생님이 문제를 등록하면 자동으로 표시됩니다.";
+      challengeImage.hidden = true;
+      challengeImage.removeAttribute("src");
       answerForm.querySelector("button").disabled = true;
       return;
     }
@@ -249,6 +299,7 @@ function subscribeChallenge() {
     challengeStatus.textContent = challenge.status === "open" ? "제출 가능" : "마감";
     challengeTitle.textContent = challenge.title;
     challengeDescription.textContent = challenge.description;
+    renderImage(challengeImage, challenge.imageUrl);
     answerForm.querySelector("button").disabled = challenge.status !== "open";
   });
   unsubscribers.push(unsubscribe);
@@ -291,51 +342,106 @@ function renderRankItem(student, index) {
   `;
 }
 
-function subscribeAuctions() {
-  const auctionsQuery = query(ref(db, "auctions"), orderByChild("endsAt"), limitToLast(20));
+function subscribeStore() {
+  const productsQuery = query(ref(db, "storeProducts"), orderByChild("createdAt"), limitToLast(50));
 
-  const unsubscribe = onValue(auctionsQuery, (snapshot) => {
+  const unsubscribe = onValue(productsQuery, (snapshot) => {
     if (!snapshot.exists()) {
-      auctionList.innerHTML = `<p class="empty-text">등록된 상품이 없습니다.</p>`;
+      storeList.innerHTML = `<p class="empty-text">아직 상점 상품이 없습니다.</p>`;
       return;
     }
 
-    const auctions = [];
+    const products = [];
     snapshot.forEach((child) => {
-      const item = child.val();
-      if (item.visible) auctions.push({ id: child.key, ...item });
+      const product = child.val();
+      if (product.visible !== false) products.push({ id: child.key, ...product });
     });
+    products.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
 
-    if (!auctions.length) {
-      auctionList.innerHTML = `<p class="empty-text">표시할 상품이 없습니다.</p>`;
-      return;
-    }
+    storeList.innerHTML = products.length
+      ? products.map(renderProductItem).join("")
+      : `<p class="empty-text">지금 살 수 있는 상품이 없습니다.</p>`;
 
-    auctions.sort((a, b) => Number(a.endsAt ?? 0) - Number(b.endsAt ?? 0));
-    auctionList.innerHTML = auctions.map(renderAuctionItem).join("");
-
-    auctionList.querySelectorAll("button[data-auction-id]").forEach((button) => {
-      button.addEventListener("click", () => handleBid(button.dataset.auctionId));
+    storeList.querySelectorAll("button[data-product-id]").forEach((button) => {
+      const product = products.find((item) => item.id === button.dataset.productId);
+      button.addEventListener("click", () => openProductDialog(product));
     });
   });
   unsubscribers.push(unsubscribe);
 }
 
-function renderAuctionItem(item, index) {
-  const status = item.status === "open" ? "진행 중" : "마감";
-  const currentPrice = Number(item.currentPrice ?? item.startPrice ?? 0);
-  const colorClass = ["color-green", "color-blue", "color-red"][index % 3];
+function renderProductItem(product) {
+  const image = product.imageUrl
+    ? `<img class="product-image" src="${escapeAttribute(product.imageUrl)}" alt="" loading="lazy" />`
+    : `<div class="product-placeholder">상품</div>`;
+
   return `
-    <article class="auction-item">
-      <div class="auction-visual ${colorClass}">${escapeHtml(item.category ?? "상품")}</div>
-      <div class="auction-body">
-        <p class="eyebrow">${status}</p>
-        <h3>${escapeHtml(item.title ?? "상품")}</h3>
-        <p>현재가 ${currentPrice}점 · ${formatDeadline(item.endsAt)}</p>
-        <button type="button" data-auction-id="${item.id}" ${item.status === "open" ? "" : "disabled"}>입찰하기</button>
+    <article class="product-card">
+      ${image}
+      <div class="product-body">
+        <p class="eyebrow">${Number(product.price ?? 0)}점</p>
+        <h3>${escapeHtml(product.title ?? "상품")}</h3>
+        <p>${escapeHtml(product.description ?? "")}</p>
+        <button type="button" data-product-id="${product.id}">자세히 보기</button>
       </div>
     </article>
   `;
+}
+
+function openProductDialog(product) {
+  selectedProduct = product;
+  const price = Number(product.price ?? 0);
+  const points = Number(currentProfile?.points ?? 0);
+  renderImage(dialogProductImage, product.imageUrl);
+  dialogProductPrice.textContent = `${price}점`;
+  dialogProductTitle.textContent = product.title ?? "상품";
+  dialogProductDescription.textContent = product.description ?? "";
+  dialogBalance.textContent = `현재 잔액 ${points}점`;
+  dialogAfterBalance.textContent = `구매 후 잔액 ${points - price}점`;
+  buyProductButton.disabled = points < price || isTeacher(currentProfile, currentUser);
+  buyProductButton.textContent = points < price ? "포인트가 부족합니다" : "제품 구입";
+  setMessage(purchaseMessage, "진짜 구매하시겠습니까? 버튼을 누르면 포인트가 차감됩니다.");
+  productDialog.showModal();
+}
+
+async function handlePurchase() {
+  if (!currentUser || !selectedProduct) return;
+  if (isTeacher(currentProfile, currentUser)) {
+    setMessage(purchaseMessage, "선생님 계정은 구매하지 않습니다.");
+    return;
+  }
+
+  const price = Number(selectedProduct.price ?? 0);
+  buyProductButton.disabled = true;
+
+  try {
+    const result = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
+      const points = Number(currentPoints ?? 0);
+      if (points < price) return;
+      return points - price;
+    });
+
+    if (!result.committed) {
+      setMessage(purchaseMessage, "포인트가 부족해서 구매하지 못했습니다.");
+      return;
+    }
+
+    const remaining = Number(result.snapshot.val() ?? 0);
+    await set(push(ref(db, "purchases")), {
+      uid: currentUser.uid,
+      productId: selectedProduct.id,
+      productTitle: selectedProduct.title,
+      price,
+      remainingPoints: remaining,
+      createdAt: serverTimestamp(),
+    });
+    setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${remaining}점입니다.`);
+    dialogBalance.textContent = `현재 잔액 ${remaining}점`;
+    dialogAfterBalance.textContent = `구매 후 잔액 ${remaining}점`;
+  } catch (error) {
+    setMessage(purchaseMessage, authErrorMessage(error.code));
+    buyProductButton.disabled = false;
+  }
 }
 
 async function handleAnswerSubmit(event) {
@@ -359,80 +465,105 @@ async function handleAnswerSubmit(event) {
   });
 
   answerInput.value = "";
-  setMessage(answerMessage, "제출됐습니다.");
-}
-
-async function handleBid(auctionId) {
-  if (!currentUser) return;
-
-  const amount = Number(prompt("입찰할 포인트를 입력하세요."));
-  if (!Number.isFinite(amount) || amount <= 0) return;
-
-  const bidRef = push(ref(db, "bids"));
-  await set(bidRef, {
-    auctionId,
-    uid: currentUser.uid,
-    amount,
-    createdAt: serverTimestamp(),
-  });
+  setMessage(answerMessage, "제출되었습니다.");
 }
 
 async function handleChallengeSave(event) {
   event.preventDefault();
-  if (currentProfile?.role !== "teacher") return;
+  if (!isTeacher(currentProfile, currentUser)) return;
 
-  const dateKey = $("#admin-challenge-date").value;
-  const title = $("#admin-challenge-title").value.trim();
-  const description = $("#admin-challenge-description").value.trim();
-  const keywords = $("#admin-answer-keywords").value
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+  try {
+    setMessage(adminMessage, "문제를 저장하는 중입니다.");
+    const dateKey = $("#admin-challenge-date").value;
+    const title = $("#admin-challenge-title").value.trim();
+    const description = $("#admin-challenge-description").value.trim();
+    const answer = $("#admin-answer").value.trim();
+    const imageUrl = await getImageValue("#admin-challenge-image-url", "#admin-challenge-image-file");
 
-  await update(ref(db), {
-    [`dailyChallenges/${dateKey}`]: {
-      title,
-      description,
-      status: "open",
-      createdBy: currentUser.uid,
-      updatedAt: serverTimestamp(),
-    },
-    [`challengeAnswers/${dateKey}`]: {
-      keywords,
-      exactAnswers: [],
-      updatedAt: serverTimestamp(),
-    },
-  });
+    await update(ref(db), {
+      [`dailyChallenges/${dateKey}`]: {
+        title,
+        description,
+        imageUrl,
+        status: "open",
+        createdBy: currentUser.uid,
+        updatedAt: serverTimestamp(),
+      },
+      [`challengeAnswers/${dateKey}`]: {
+        answer,
+        updatedAt: serverTimestamp(),
+      },
+    });
 
-  challengeForm.reset();
-  $("#admin-challenge-date").value = getKoreaDateKey();
-  setMessage(adminMessage, "문제를 저장했습니다.");
+    challengeForm.reset();
+    $("#admin-challenge-date").value = getKoreaDateKey();
+    setMessage(adminMessage, "문제를 저장했습니다.");
+  } catch (error) {
+    setMessage(adminMessage, error.message || "문제를 저장하지 못했습니다.");
+  }
 }
 
-async function handleAuctionSave(event) {
+async function handleProductSave(event) {
   event.preventDefault();
-  if (currentProfile?.role !== "teacher") return;
+  if (!isTeacher(currentProfile, currentUser)) return;
 
-  const title = $("#admin-auction-title").value.trim();
-  const category = $("#admin-auction-category").value.trim();
-  const startPrice = Number($("#admin-auction-price").value);
-  const endsAt = new Date($("#admin-auction-end").value).getTime();
-  const auctionRef = push(ref(db, "auctions"));
+  try {
+    setMessage(adminMessage, "상품을 저장하는 중입니다.");
+    const title = $("#admin-product-title").value.trim();
+    const description = $("#admin-product-description").value.trim();
+    const price = Number($("#admin-product-price").value);
+    const imageUrl = await getImageValue("#admin-product-image-url", "#admin-product-image-file");
 
-  await set(auctionRef, {
-    title,
-    category,
-    visible: true,
-    status: "open",
-    startPrice,
-    currentPrice: startPrice,
-    endsAt,
-    createdBy: currentUser.uid,
-    createdAt: serverTimestamp(),
+    await set(push(ref(db, "storeProducts")), {
+      title,
+      description,
+      price,
+      imageUrl,
+      visible: true,
+      createdBy: currentUser.uid,
+      createdAt: serverTimestamp(),
+    });
+
+    productForm.reset();
+    $("#admin-product-price").value = 10;
+    setMessage(adminMessage, "상점 상품을 저장했습니다.");
+  } catch (error) {
+    setMessage(adminMessage, error.message || "상품을 저장하지 못했습니다.");
+  }
+}
+
+async function getImageValue(urlSelector, fileSelector) {
+  const url = $(urlSelector).value.trim();
+  const file = $(fileSelector).files?.[0];
+  if (file) return readSmallImage(file);
+  return url;
+}
+
+function readSmallImage(file) {
+  if (file.size > MAX_INLINE_IMAGE_BYTES) {
+    throw new Error("사진 파일이 너무 큽니다. 450KB 이하 사진이나 사진 주소를 사용해주세요.");
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => reject(new Error("사진을 읽지 못했습니다.")));
+    reader.readAsDataURL(file);
   });
+}
 
-  auctionForm.reset();
-  setMessage(adminMessage, "경매 상품을 저장했습니다.");
+function renderImage(imageElement, imageUrl) {
+  if (!imageUrl) {
+    imageElement.hidden = true;
+    imageElement.removeAttribute("src");
+    return;
+  }
+  imageElement.src = imageUrl;
+  imageElement.hidden = false;
+}
+
+function isTeacher(profile, user) {
+  return profile?.role === "teacher" || user?.email === ADMIN_AUTH_EMAIL;
 }
 
 function normalizeLoginEmail(value) {
@@ -448,18 +579,8 @@ function getKoreaDateKey() {
   }).format(new Date());
 }
 
-function formatDeadline(timestamp) {
-  if (!timestamp) return "마감 시간 미정";
-  return new Date(Number(timestamp)).toLocaleString("ko-KR", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function authErrorMessage(code) {
-  if (code === "auth/email-already-in-use") return "이미 가입된 아이디입니다. 로그인으로 들어가세요.";
+  if (code === "auth/email-already-in-use") return "이미 가입된 이메일입니다. 로그인으로 들어가세요.";
   if (code === "auth/invalid-email") return "아이디 또는 이메일 형식을 확인해주세요.";
   if (code === "auth/invalid-credential") return "아이디 또는 비밀번호를 확인해주세요.";
   if (code === "auth/unauthorized-domain") return "Firebase Authentication 승인 도메인에 kdynt17.github.io를 추가해주세요.";
@@ -485,4 +606,8 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replaceAll("`", "&#096;");
 }
