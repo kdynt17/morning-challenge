@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>아침 창의력 챌린지</title>
-    <link rel="stylesheet" href="styles.css?v=20260505-admin" />
-    <script type="module" src="app.js?v=20260505-admin"></script>
+    <link rel="stylesheet" href="styles.css?v=20260505-authsplit" />
+    <script type="module" src="app.js?v=20260505-authsplit"></script>
   </head>
   <body>
     <main>
@@ -30,12 +30,12 @@
             <button class="primary-button" type="submit">들어가기</button>
           </form>
           <button id="open-signup-button" class="secondary-button" type="button">회원가입</button>
-          <p id="auth-message" class="helper-text">선생님 계정은 admin@admin으로 로그인하세요.</p>
+          <p id="auth-message" class="helper-text">학생은 회원가입 후 바로 들어갈 수 있습니다. 선생님 계정은 admin@admin으로 로그인하세요.</p>
         </section>
       </section>
 
       <dialog id="signup-dialog" class="signup-dialog">
-        <form id="signup-form" class="stack-form" method="dialog">
+        <form id="signup-form" class="stack-form">
           <div class="dialog-head">
             <div>
               <p class="eyebrow">Sign Up</p>
@@ -56,7 +56,7 @@
             <input id="signup-password" type="password" placeholder="6자 이상" autocomplete="new-password" minlength="6" required />
           </label>
           <button class="primary-button" type="submit">가입하고 시작하기</button>
-          <p id="signup-message" class="helper-text">가입하면 자동으로 로그인됩니다.</p>
+          <p id="signup-message" class="helper-text">이메일 인증 없이 바로 가입하고 자동 로그인됩니다.</p>
         </form>
       </dialog>
 
@@ -95,104 +95,49 @@
         </section>
 
         <section id="leaderboard-page" class="page" data-page="leaderboard">
-          <div class="section-title">
-            <p class="eyebrow">Leaderboard</p>
-            <h2>포인트 순위</h2>
-          </div>
-          <div id="leaderboard-list" class="rank-list">
-            <p class="empty-text">순위표를 불러오고 있어요.</p>
-          </div>
+          <div class="section-title"><p class="eyebrow">Leaderboard</p><h2>포인트 순위</h2></div>
+          <div id="leaderboard-list" class="rank-list"><p class="empty-text">순위표를 불러오고 있어요.</p></div>
         </section>
 
         <section id="auction-page" class="page" data-page="auction">
-          <div class="section-title">
-            <p class="eyebrow">Auction</p>
-            <h2>포인트 경매장</h2>
-          </div>
-          <div id="auction-list" class="auction-list">
-            <p class="empty-text">상품을 불러오고 있어요.</p>
-          </div>
+          <div class="section-title"><p class="eyebrow">Auction</p><h2>포인트 경매장</h2></div>
+          <div id="auction-list" class="auction-list"><p class="empty-text">상품을 불러오고 있어요.</p></div>
         </section>
 
         <section id="profile-page" class="page" data-page="profile">
-          <div class="section-title">
-            <p class="eyebrow">Profile</p>
-            <h2>내 정보</h2>
-          </div>
+          <div class="section-title"><p class="eyebrow">Profile</p><h2>내 정보</h2></div>
           <article class="profile-card">
             <dl>
-              <div>
-                <dt>이름</dt>
-                <dd id="profile-name">-</dd>
-              </div>
-              <div>
-                <dt>아이디</dt>
-                <dd id="profile-email">-</dd>
-              </div>
-              <div>
-                <dt>역할</dt>
-                <dd id="profile-role">-</dd>
-              </div>
-              <div>
-                <dt>포인트</dt>
-                <dd><span id="profile-points">0</span>점</dd>
-              </div>
+              <div><dt>이름</dt><dd id="profile-name">-</dd></div>
+              <div><dt>아이디</dt><dd id="profile-email">-</dd></div>
+              <div><dt>역할</dt><dd id="profile-role">-</dd></div>
+              <div><dt>포인트</dt><dd><span id="profile-points">0</span>점</dd></div>
             </dl>
           </article>
         </section>
 
         <section id="admin-page" class="page" data-page="admin">
-          <div class="section-title">
-            <p class="eyebrow">Teacher</p>
-            <h2>선생님 관리</h2>
-          </div>
-
+          <div class="section-title"><p class="eyebrow">Teacher</p><h2>선생님 관리</h2></div>
           <article class="admin-card">
             <h3>오늘 문제 만들기</h3>
             <form id="challenge-form" class="stack-form">
-              <label>
-                날짜
-                <input id="admin-challenge-date" type="date" required />
-              </label>
-              <label>
-                문제 제목
-                <input id="admin-challenge-title" type="text" placeholder="오늘의 문제" required />
-              </label>
-              <label>
-                설명
-                <textarea id="admin-challenge-description" rows="4" placeholder="문제 설명을 적어주세요" required></textarea>
-              </label>
-              <label>
-                정답 키워드
-                <input id="admin-answer-keywords" type="text" placeholder="삼각형, 안정" />
-              </label>
+              <label>날짜<input id="admin-challenge-date" type="date" required /></label>
+              <label>문제 제목<input id="admin-challenge-title" type="text" placeholder="오늘의 문제" required /></label>
+              <label>설명<textarea id="admin-challenge-description" rows="4" placeholder="문제 설명을 적어주세요" required></textarea></label>
+              <label>정답 키워드<input id="admin-answer-keywords" type="text" placeholder="삼각형, 안정" /></label>
               <button class="primary-button" type="submit">문제 저장</button>
             </form>
           </article>
-
           <article class="admin-card">
             <h3>경매 상품 만들기</h3>
             <form id="auction-form" class="stack-form">
-              <label>
-                상품명
-                <input id="admin-auction-title" type="text" placeholder="매점 간식 교환권" required />
-              </label>
-              <label>
-                분류
-                <input id="admin-auction-category" type="text" placeholder="간식" required />
-              </label>
-              <label>
-                시작가
-                <input id="admin-auction-price" type="number" min="1" value="50" required />
-              </label>
-              <label>
-                마감 시간
-                <input id="admin-auction-end" type="datetime-local" required />
-              </label>
+              <label>상품명<input id="admin-auction-title" type="text" placeholder="매점 간식 교환권" required /></label>
+              <label>분류<input id="admin-auction-category" type="text" placeholder="간식" required /></label>
+              <label>시작가<input id="admin-auction-price" type="number" min="1" value="50" required /></label>
+              <label>마감 시간<input id="admin-auction-end" type="datetime-local" required /></label>
               <button class="primary-button" type="submit">상품 저장</button>
             </form>
           </article>
-
           <p id="admin-message" class="helper-text"></p>
         </section>
 
