@@ -8,7 +8,11 @@
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (!data.exists() && auth.uid == $uid && newData.child('role').val() == 'student' && newData.child('points').val() == 0 && newData.child('authEmail').val() == auth.token.email) || (!data.exists() && auth.uid == $uid && auth.token.email == 'admin@admin.com' && newData.child('role').val() == 'teacher') || (data.exists() && auth.uid == $uid && newData.child('role').val() == data.child('role').val() && newData.child('authEmail').val() == data.child('authEmail').val() && newData.child('points').isNumber() && newData.child('points').val() >= 0))",
-        ".validate": "newData.hasChildren(['email', 'authEmail', 'role', 'points', 'name'])"
+        ".validate": "newData.hasChildren(['email', 'authEmail', 'role', 'points', 'name'])",
+        "points": {
+          ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || auth.uid == $uid)",
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        }
       }
     },
 
@@ -37,7 +41,7 @@
       "$dateKey": {
         "$uid": {
           ".read": "auth != null",
-          ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (auth.uid == $uid && newData.child('uid').val() == auth.uid && newData.child('status').val() == 'correct'))"
+          ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (auth.uid == $uid && newData.child('uid').val() == auth.uid && (newData.child('status').val() == 'correct' || newData.child('status').val() == 'awarding')))"
         }
       }
     },
@@ -62,6 +66,13 @@
       "$purchaseId": {
         ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
         ".write": "auth != null && !data.exists() && newData.child('uid').val() == auth.uid && newData.child('price').isNumber() && newData.child('price').val() > 0"
+      }
+    },
+
+    "pointGrants": {
+      "$grantId": {
+        ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') && !data.exists() && newData.child('uid').isString() && newData.child('points').isNumber() && newData.child('points').val() > 0"
       }
     },
 
