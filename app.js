@@ -185,6 +185,7 @@ async function handleSignup(event) {
       todayResult: "-",
       createdAt: serverTimestamp(),
     });
+    await syncLeaderboardProfile(credential.user.uid, { name, role: "student", points: 0, todayResult: "-" });
     setMessage(signupMessage, "가입되었습니다.");
   } catch (error) {
     setMessage(signupMessage, authErrorMessage(error.code));
@@ -210,8 +211,11 @@ async function ensureProfile(user) {
 
     if (Object.keys(updates).length) {
       await update(userRef, updates);
-      return { ...profile, ...updates };
+      const nextProfile = { ...profile, ...updates };
+      await syncLeaderboardProfile(user.uid, nextProfile);
+      return nextProfile;
     }
+    await syncLeaderboardProfile(user.uid, profile);
     return profile;
   }
 
@@ -225,6 +229,7 @@ async function ensureProfile(user) {
     createdAt: serverTimestamp(),
   };
   await set(userRef, profile);
+  await syncLeaderboardProfile(user.uid, profile);
   return profile;
 }
 
@@ -233,6 +238,7 @@ function subscribeProfile() {
     if (!snapshot.exists()) return;
     currentProfile = snapshot.val();
     renderProfile(currentUser, currentProfile);
+    void syncLeaderboardProfile(currentUser.uid, currentProfile);
   });
   unsubscribers.push(unsubscribe);
 }
@@ -251,6 +257,17 @@ function renderProfile(user, profile) {
   profileRole.textContent = teacher ? "선생님" : "학생";
   profilePoints.textContent = points;
   adminNavButton.hidden = !teacher;
+}
+
+async function syncLeaderboardProfile(uid, profile) {
+  if (!uid || profile?.role === "teacher") return;
+
+  await set(ref(db, `leaderboardUsers/${uid}`), {
+    name: profile?.name || "학생",
+    points: Number(profile?.points ?? 0),
+    todayResult: profile?.todayResult ?? "-",
+    updatedAt: serverTimestamp(),
+  });
 }
 
 function setAuthMode(mode) {
@@ -324,7 +341,7 @@ function subscribeChallenge() {
 }
 
 function subscribeLeaderboard() {
-  const studentsQuery = query(ref(db, "users"), orderByChild("points"), limitToLast(30));
+  const studentsQuery = query(ref(db, "leaderboardUsers"), orderByChild("points"), limitToLast(30));
 
   const unsubscribe = onValue(studentsQuery, (snapshot) => {
     if (!snapshot.exists()) {
@@ -335,7 +352,7 @@ function subscribeLeaderboard() {
     const students = [];
     snapshot.forEach((child) => {
       const student = child.val();
-      if (student.role !== "teacher") students.push(student);
+      students.push(student);
     });
     students.sort((a, b) => Number(b.points ?? 0) - Number(a.points ?? 0));
 
@@ -436,6 +453,7 @@ function subscribeAdminStudents() {
         const student = child.val();
         if (student.role !== "teacher") {
           adminStudents.push({ id: child.key, ...student });
+          void syncLeaderboardProfile(child.key, student);
         }
       });
     }
@@ -556,6 +574,7 @@ async function handlePurchase() {
     }
 
     const remaining = Number(result.snapshot.val() ?? 0);
+    await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: remaining });
     await set(push(ref(db, "purchases")), {
       uid: currentUser.uid,
       productId: selectedProduct.id,
@@ -664,6 +683,9 @@ async function handleAnswerSubmit(event) {
     if (!pointResult.committed) {
       throw new Error("포인트 지급에 실패했습니다. 선생님에게 보정 지급을 요청해주세요.");
     }
+
+    const totalPoints = Number(pointResult.snapshot.val() ?? 0);
+    await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: totalPoints });
 
     await update(resultRef, {
       uid: currentUser.uid,
@@ -822,6 +844,9 @@ async function handlePointGrant(event) {
     if (!pointResult.committed) {
       throw new Error("포인트 지급이 반영되지 않았습니다.");
     }
+
+    const totalPoints = Number(pointResult.snapshot.val() ?? 0);
+    await syncLeaderboardProfile(studentId, { ...student, points: totalPoints });
 
     await set(push(ref(db, "pointGrants")), {
       uid: studentId,
