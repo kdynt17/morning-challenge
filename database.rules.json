@@ -66,7 +66,7 @@
       ".read": "auth != null",
       "$purchaseId": {
         ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-        ".write": "auth != null && !data.exists() && newData.child('uid').val() == auth.uid && newData.child('price').isNumber() && newData.child('price').val() > 0"
+        ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && newData.child('price').isNumber() && newData.child('price').val() > 0) || (data.exists() && !newData.exists() && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')))"
       }
     },
 

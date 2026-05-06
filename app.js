@@ -89,6 +89,7 @@ let currentUser = null;
 let currentProfile = null;
 let currentChallengeId = null;
 let currentChallenge = null;
+let currentChallengeResult = null;
 let selectedProduct = null;
 let adminStudents = [];
 let unsubscribers = [];
@@ -132,6 +133,7 @@ if (setupRequired) {
     clearSubscriptions();
     currentUser = user;
     currentProfile = null;
+    currentChallengeResult = null;
     selectedProduct = null;
 
     if (!user) {
@@ -145,6 +147,7 @@ if (setupRequired) {
     showPage("home");
     subscribeProfile();
     subscribeChallenge();
+    subscribeMyChallengeResult();
     subscribeLeaderboard();
     subscribeStore();
     subscribePurchaseHistory();
@@ -317,12 +320,11 @@ function subscribeChallenge() {
       currentChallengeId = null;
       currentChallenge = null;
       challengeDate.textContent = today;
-      challengeStatus.textContent = "아직 공개 전";
       challengeTitle.textContent = "오늘의 문제가 아직 등록되지 않았습니다.";
       challengeDescription.textContent = "선생님이 문제를 등록하면 자동으로 표시됩니다.";
       challengeImage.hidden = true;
       challengeImage.removeAttribute("src");
-      answerForm.querySelector("button").disabled = true;
+      renderChallengeAvailability();
       return;
     }
 
@@ -330,14 +332,54 @@ function subscribeChallenge() {
     currentChallengeId = snapshot.key;
     currentChallenge = challenge;
     challengeDate.textContent = today;
-    challengeStatus.textContent = challenge.status === "open" ? "제출 가능" : "마감";
     challengeTitle.textContent = challenge.title;
     challengeDescription.textContent = challenge.description;
     renderImage(challengeImage, challenge.imageUrl);
     setMessage(answerMessage, "");
-    answerForm.querySelector("button").disabled = challenge.status !== "open";
+    renderChallengeAvailability();
   });
   unsubscribers.push(unsubscribe);
+}
+
+function subscribeMyChallengeResult() {
+  const today = getKoreaDateKey();
+  const unsubscribe = onValue(ref(db, `challengeResults/${today}/${currentUser.uid}`), (snapshot) => {
+    currentChallengeResult = snapshot.exists() ? snapshot.val() : null;
+    renderChallengeAvailability();
+  });
+  unsubscribers.push(unsubscribe);
+}
+
+function renderChallengeAvailability() {
+  const submitButton = answerForm.querySelector("button");
+
+  if (!currentChallenge) {
+    challengeStatus.textContent = "아직 공개 전";
+    submitButton.disabled = true;
+    return;
+  }
+
+  if (currentChallengeResult?.status === "correct") {
+    challengeStatus.textContent = "제출 완료";
+    submitButton.disabled = true;
+    setMessage(answerMessage, "이미 정답을 제출했습니다. 포인트는 한 번만 지급됩니다.");
+    return;
+  }
+
+  if (currentChallengeResult?.status === "awarding") {
+    challengeStatus.textContent = "처리 중";
+    submitButton.disabled = true;
+    return;
+  }
+
+  if (currentChallenge.status !== "open") {
+    challengeStatus.textContent = "마감";
+    submitButton.disabled = true;
+    return;
+  }
+
+  challengeStatus.textContent = "제출 가능";
+  submitButton.disabled = false;
 }
 
 function subscribeLeaderboard() {
@@ -422,6 +464,10 @@ function subscribePurchaseHistory() {
     purchaseHistoryList.innerHTML = purchases.length
       ? purchases.map(renderPurchaseHistoryItem).join("")
       : `<p class="empty-text">아직 구매한 상품이 없습니다.</p>`;
+
+    purchaseHistoryList.querySelectorAll("button[data-use-purchase-id]").forEach((button) => {
+      button.addEventListener("click", () => handlePurchaseUse(button.dataset.usePurchaseId));
+    });
   });
   unsubscribers.push(unsubscribe);
 }
@@ -433,9 +479,25 @@ function renderPurchaseHistoryItem(item) {
         <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
         <p class="rank-meta">${formatDateTime(item.createdAt)}</p>
       </div>
-      <span class="rank-points">-${Number(item.price ?? 0)}점</span>
+      <div class="history-actions">
+        <span class="rank-points">-${Number(item.price ?? 0)}점</span>
+        <button class="secondary-button inline-action-button" type="button" data-use-purchase-id="${escapeAttribute(item.id)}">사용 완료</button>
+      </div>
     </article>
   `;
+}
+
+async function handlePurchaseUse(purchaseId) {
+  if (!currentUser || !purchaseId) return;
+
+  const ok = confirm("이 구매 내역을 사용 완료로 정리할까요?");
+  if (!ok) return;
+
+  try {
+    await remove(ref(db, `purchases/${purchaseId}`));
+  } catch (error) {
+    setMessage(profileMessage, error.message || "구매 내역을 정리하지 못했습니다.");
+  }
 }
 
 function subscribeAdminTools() {
@@ -487,7 +549,7 @@ function subscribeAdminProducts() {
     const products = [];
     snapshot.forEach((child) => {
       const product = child.val();
-      products.push({ id: child.key, ...product });
+      if (product.visible !== false) products.push({ id: child.key, ...product });
     });
     products.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
 
