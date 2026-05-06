@@ -4,6 +4,7 @@
     ".write": false,
 
     "users": {
+      ".read": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
       ".indexOn": ["points", "email"],
       "$uid": {
         ".read": "auth != null",
