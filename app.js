@@ -15,6 +15,7 @@ import {
   orderByChild,
   push,
   query,
+  remove,
   ref,
   runTransaction,
   serverTimestamp,
@@ -65,6 +66,11 @@ const adminNavButton = $("#admin-nav-button");
 const challengeForm = $("#challenge-form");
 const deleteChallengeButton = $("#delete-challenge-button");
 const productForm = $("#product-form");
+const adminProductList = $("#admin-product-list");
+const pointGrantForm = $("#point-grant-form");
+const grantStudentSelect = $("#grant-student-id");
+const grantPointsInput = $("#grant-points");
+const grantReasonInput = $("#grant-reason");
 const adminMessage = $("#admin-message");
 const productDialog = $("#product-dialog");
 const dialogProductImage = $("#dialog-product-image");
@@ -84,6 +90,7 @@ let currentProfile = null;
 let currentChallengeId = null;
 let currentChallenge = null;
 let selectedProduct = null;
+let adminStudents = [];
 let unsubscribers = [];
 
 const pageNames = {
@@ -111,6 +118,7 @@ if (setupRequired) {
   challengeForm.addEventListener("submit", handleChallengeSave);
   deleteChallengeButton.addEventListener("click", handleChallengeDelete);
   productForm.addEventListener("submit", handleProductSave);
+  pointGrantForm.addEventListener("submit", handlePointGrant);
   buyProductButton.addEventListener("click", handlePurchase);
 
   navButtons.forEach((button) => {
@@ -140,6 +148,7 @@ if (setupRequired) {
     subscribeLeaderboard();
     subscribeStore();
     subscribePurchaseHistory();
+    subscribeAdminTools();
   });
 }
 
@@ -412,6 +421,91 @@ function renderPurchaseHistoryItem(item) {
   `;
 }
 
+function subscribeAdminTools() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  subscribeAdminStudents();
+  subscribeAdminProducts();
+}
+
+function subscribeAdminStudents() {
+  const unsubscribe = onValue(
+    ref(db, "users"),
+    (snapshot) => {
+      adminStudents = [];
+
+      if (snapshot.exists()) {
+        snapshot.forEach((child) => {
+          const student = child.val();
+          if (student.role !== "teacher") {
+            adminStudents.push({ id: child.key, ...student });
+          }
+        });
+      }
+
+      adminStudents.sort((a, b) => String(a.name ?? a.email ?? "").localeCompare(String(b.name ?? b.email ?? ""), "ko-KR"));
+      renderGrantStudentOptions();
+    },
+    (error) => {
+      grantStudentSelect.innerHTML = `<option value="">학생 목록 권한 오류</option>`;
+      setMessage(adminMessage, `${authErrorMessage(error.code)} database.rules.json을 Firebase에 다시 게시해주세요.`);
+    },
+  );
+  unsubscribers.push(unsubscribe);
+}
+
+function renderGrantStudentOptions() {
+  if (!grantStudentSelect) return;
+
+  grantStudentSelect.innerHTML = adminStudents.length
+    ? `<option value="">학생을 선택하세요</option>${adminStudents.map((student) => {
+        const label = `${student.name ?? student.email ?? "학생"} (${Number(student.points ?? 0)}점)`;
+        return `<option value="${escapeAttribute(student.id)}">${escapeHtml(label)}</option>`;
+      }).join("")}`
+    : `<option value="">학생이 없습니다</option>`;
+}
+
+function subscribeAdminProducts() {
+  const productsQuery = query(ref(db, "storeProducts"), orderByChild("createdAt"), limitToLast(100));
+
+  const unsubscribe = onValue(productsQuery, (snapshot) => {
+    if (!snapshot.exists()) {
+      adminProductList.innerHTML = `<p class="empty-text">등록된 상품이 없습니다.</p>`;
+      return;
+    }
+
+    const products = [];
+    snapshot.forEach((child) => {
+      const product = child.val();
+      products.push({ id: child.key, ...product });
+    });
+    products.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+
+    adminProductList.innerHTML = products.length
+      ? products.map(renderAdminProductItem).join("")
+      : `<p class="empty-text">등록된 상품이 없습니다.</p>`;
+
+    adminProductList.querySelectorAll("button[data-delete-product-id]").forEach((button) => {
+      button.addEventListener("click", () => handleProductDelete(button.dataset.deleteProductId));
+    });
+  });
+  unsubscribers.push(unsubscribe);
+}
+
+function renderAdminProductItem(product) {
+  const status = product.visible === false ? "삭제 또는 판매 완료" : "판매 중";
+  const disabled = product.visible === false ? " disabled" : "";
+
+  return `
+    <article class="admin-list-item">
+      <div>
+        <p class="rank-name">${escapeHtml(product.title ?? "상품")}</p>
+        <p class="rank-meta">${Number(product.price ?? 0)}점 · ${escapeHtml(status)}</p>
+      </div>
+      <button class="inline-danger-button" type="button" data-delete-product-id="${escapeAttribute(product.id)}"${disabled}>삭제</button>
+    </article>
+  `;
+}
+
 function renderProductItem(product) {
   const image = product.imageUrl
     ? `<img class="product-image" src="${escapeAttribute(product.imageUrl)}" alt="" loading="lazy" />`
@@ -526,31 +620,57 @@ async function handleAnswerSubmit(event) {
 
     const resultRef = ref(db, `challengeResults/${currentChallengeId}/${currentUser.uid}`);
     const reserveResult = await runTransaction(resultRef, (currentResult) => {
-      if (currentResult?.status === "correct") return;
+      if (currentResult?.status === "correct" && Number.isFinite(Number(currentResult.awardedPoints))) return;
       return {
+        ...(currentResult ?? {}),
         uid: currentUser.uid,
         challengeId: currentChallengeId,
-        status: "correct",
+        status: "awarding",
         answer,
-        createdAt: Date.now(),
+        createdAt: currentResult?.createdAt ?? Date.now(),
       };
     });
 
     if (!reserveResult.committed) {
+      const previousResult = reserveResult.snapshot.val();
       answerInput.value = "";
-      setMessage(answerMessage, "이미 정답 처리되었습니다. 포인트는 한 번만 지급됩니다.");
+      setMessage(
+        answerMessage,
+        previousResult?.rank
+          ? `이미 정답 처리되었습니다. ${previousResult.rank}번째 정답으로 ${Number(previousResult.awardedPoints ?? 0)}점이 지급된 기록이 있습니다.`
+          : "이미 정답 처리되었습니다. 포인트는 한 번만 지급됩니다.",
+      );
       return;
     }
 
-    const counterResult = await runTransaction(ref(db, `scoreCounters/${currentChallengeId}/correctCount`), (currentCount) => {
-      return Number(currentCount ?? 0) + 1;
-    });
-    const rank = Number(counterResult.snapshot.val() ?? 1);
-    const awardedPoints = Math.max(0, 150 - (rank - 1) * 5);
+    const reservedResult = reserveResult.snapshot.val();
+    let rank = Number(reservedResult?.rank ?? 0);
+    let awardedPoints = Number(reservedResult?.awardedPoints ?? NaN);
 
-    await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
+    if (!rank || !Number.isFinite(awardedPoints)) {
+      const counterResult = await runTransaction(ref(db, `scoreCounters/${currentChallengeId}/correctCount`), (currentCount) => {
+        return Number(currentCount ?? 0) + 1;
+      });
+      rank = Number(counterResult.snapshot.val() ?? 1);
+      awardedPoints = Math.max(0, 150 - (rank - 1) * 5);
+    }
+
+    await update(resultRef, {
+      uid: currentUser.uid,
+      challengeId: currentChallengeId,
+      status: "awarding",
+      rank,
+      awardedPoints,
+      answer,
+    });
+
+    const pointResult = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
       return Number(currentPoints ?? 0) + awardedPoints;
     });
+
+    if (!pointResult.committed) {
+      throw new Error("포인트 지급에 실패했습니다. 선생님에게 보정 지급을 요청해주세요.");
+    }
 
     await update(resultRef, {
       uid: currentUser.uid,
@@ -565,7 +685,7 @@ async function handleAnswerSubmit(event) {
     answerInput.value = "";
     setMessage(answerMessage, `정답입니다! ${rank}번째 정답으로 ${awardedPoints}점을 받았습니다.`);
   } catch (error) {
-    setMessage(answerMessage, authErrorMessage(error.code));
+    setMessage(answerMessage, error.message || authErrorMessage(error.code));
   }
 }
 
@@ -663,6 +783,66 @@ async function handleProductSave(event) {
     setMessage(adminMessage, "상점 상품을 저장했습니다.");
   } catch (error) {
     setMessage(adminMessage, error.message || "상품을 저장하지 못했습니다.");
+  }
+}
+
+async function handleProductDelete(productId) {
+  if (!isTeacher(currentProfile, currentUser) || !productId) return;
+
+  const ok = confirm("이 상품을 상점에서 삭제할까요?");
+  if (!ok) return;
+
+  try {
+    setMessage(adminMessage, "상품을 삭제하는 중입니다.");
+    await remove(ref(db, `storeProducts/${productId}`));
+    setMessage(adminMessage, "상품을 삭제했습니다.");
+  } catch (error) {
+    setMessage(adminMessage, error.message || "상품을 삭제하지 못했습니다.");
+  }
+}
+
+async function handlePointGrant(event) {
+  event.preventDefault();
+  if (!isTeacher(currentProfile, currentUser)) return;
+
+  const studentId = grantStudentSelect.value;
+  const amount = Math.floor(Number(grantPointsInput.value));
+  const reason = grantReasonInput.value.trim();
+  const student = adminStudents.find((item) => item.id === studentId);
+
+  if (!studentId) {
+    setMessage(adminMessage, "포인트를 지급할 학생을 선택해주세요.");
+    return;
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    setMessage(adminMessage, "지급할 포인트를 1점 이상 숫자로 입력해주세요.");
+    return;
+  }
+
+  try {
+    setMessage(adminMessage, "포인트를 지급하는 중입니다.");
+    const pointResult = await runTransaction(ref(db, `users/${studentId}/points`), (currentPoints) => {
+      return Number(currentPoints ?? 0) + amount;
+    });
+
+    if (!pointResult.committed) {
+      throw new Error("포인트 지급이 반영되지 않았습니다.");
+    }
+
+    await set(push(ref(db, "pointGrants")), {
+      uid: studentId,
+      studentName: student?.name ?? student?.email ?? "학생",
+      points: amount,
+      reason,
+      grantedBy: currentUser.uid,
+      createdAt: serverTimestamp(),
+    });
+
+    pointGrantForm.reset();
+    setMessage(adminMessage, `${student?.name ?? "학생"}에게 ${amount}점을 지급했습니다.`);
+  } catch (error) {
+    setMessage(adminMessage, error.message || "포인트를 지급하지 못했습니다.");
   }
 }
 

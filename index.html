@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>아침 창의력 챌린지</title>
     <meta http-equiv="Cache-Control" content="no-store" />
-    <link rel="stylesheet" href="styles.css?v=20260506-purchase-history" />
-    <script type="module" src="app.js?v=20260506-purchase-history"></script>
+    <link rel="stylesheet" href="styles.css?v=20260506-admin-tools" />
+    <script type="module" src="app.js?v=20260506-admin-tools"></script>
   </head>
   <body>
     <main>
@@ -127,6 +127,20 @@
               <label>상품 사진 주소<input id="admin-product-image-url" type="url" placeholder="https://..." /></label>
               <label>상품 사진 파일<input id="admin-product-image-file" type="file" accept="image/*" /></label>
               <button class="primary-button" type="submit">상품 저장</button>
+            </form>
+          </article>
+          <article class="admin-card">
+            <h3>상점 상품 관리</h3>
+            <p class="helper-text no-margin">구매 전 상품을 목록에서 삭제할 수 있습니다.</p>
+            <div id="admin-product-list" class="admin-list"><p class="empty-text">상품을 불러오고 있어요.</p></div>
+          </article>
+          <article class="admin-card">
+            <h3>학생 포인트 지급</h3>
+            <form id="point-grant-form" class="stack-form">
+              <label>학생 선택<select id="grant-student-id" required><option value="">학생을 불러오고 있어요</option></select></label>
+              <label>지급할 포인트<input id="grant-points" type="number" min="1" step="1" placeholder="예: 50" required /></label>
+              <label>메모<input id="grant-reason" type="text" placeholder="예: 오류 보정, 특별 보상" /></label>
+              <button class="primary-button" type="submit">포인트 지급</button>
             </form>
           </article>
           <p id="admin-message" class="helper-text"></p>
