@@ -372,12 +372,6 @@ function renderChallengeAvailability() {
     return;
   }
 
-  if (currentChallenge.status !== "open") {
-    challengeStatus.textContent = "마감";
-    submitButton.disabled = true;
-    return;
-  }
-
   challengeStatus.textContent = "제출 가능";
   submitButton.disabled = false;
 }
