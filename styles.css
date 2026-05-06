@@ -38,6 +38,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -55,6 +56,7 @@ button:disabled {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -64,7 +66,8 @@ textarea {
   font-size: 16px;
 }
 
-input {
+input,
+select {
   min-height: 50px;
   padding: 0 14px;
 }
@@ -348,13 +351,15 @@ label {
 
 .rank-list,
 .store-list,
-.history-list {
+.history-list,
+.admin-list {
   display: grid;
   gap: 10px;
 }
 
 .rank-item,
-.history-item {
+.history-item,
+.admin-list-item {
   display: grid;
   grid-template-columns: 42px 1fr auto;
   align-items: center;
@@ -362,7 +367,8 @@ label {
   padding: 14px;
 }
 
-.history-item {
+.history-item,
+.admin-list-item {
   grid-template-columns: 1fr auto;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -394,6 +400,19 @@ label {
 
 .rank-points {
   font-weight: 900;
+}
+
+.inline-danger-button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #be123c;
+  white-space: nowrap;
+}
+
+.no-margin {
+  margin-top: 0;
 }
 
 .product-card {
