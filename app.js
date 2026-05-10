@@ -28,6 +28,7 @@ import { firebaseConfig } from "./firebase-config.js";
 const ADMIN_LOGIN = "admin@admin";
 const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
+const WRONG_ANSWER_PENALTY = 5;
 
 const $ = (selector) => document.querySelector(selector);
 const setupRequired = firebaseConfig.apiKey.startsWith("PASTE_");
@@ -678,15 +679,28 @@ async function handleAnswerSubmit(event) {
     setMessage(answerMessage, "채점하는 중입니다.");
     const submittedHash = await hashText(normalizeAnswer(answer));
     const isCorrect = submittedHash === currentChallenge.answerHash;
+    const resultRef = ref(db, `challengeResults/${currentChallengeId}/${currentUser.uid}`);
+
+    const latestResult = await get(resultRef);
+    if (latestResult.val()?.status === "correct") {
+      answerInput.value = "";
+      setMessage(answerMessage, "이미 정답을 제출했습니다. 포인트는 더 이상 변하지 않습니다.");
+      return;
+    }
 
     await saveSubmission(answer, isCorrect ? "correct" : "wrong");
 
     if (!isCorrect) {
-      setMessage(answerMessage, "틀렸어요. 답을 고쳐서 다시 제출할 수 있습니다.");
+      const penaltyResult = await applyWrongAnswerPenalty(resultRef, answer);
+      if (penaltyResult.skippedBecauseCorrect) {
+        answerInput.value = "";
+        setMessage(answerMessage, "이미 정답을 제출했습니다. 포인트는 더 이상 변하지 않습니다.");
+        return;
+      }
+      setMessage(answerMessage, `틀렸어요. ${WRONG_ANSWER_PENALTY}점이 차감되어 현재 ${penaltyResult.remainingPoints}점입니다. 답을 고쳐서 다시 제출할 수 있습니다.`);
       return;
     }
 
-    const resultRef = ref(db, `challengeResults/${currentChallengeId}/${currentUser.uid}`);
     const reserveResult = await runTransaction(resultRef, (currentResult) => {
       if (currentResult?.status === "correct" && Number.isFinite(Number(currentResult.awardedPoints))) return;
       return {
@@ -758,6 +772,39 @@ async function handleAnswerSubmit(event) {
   } catch (error) {
     setMessage(answerMessage, error.message || authErrorMessage(error.code));
   }
+}
+
+async function applyWrongAnswerPenalty(resultRef, answer) {
+  const penaltyReservation = await runTransaction(resultRef, (currentResult) => {
+    if (currentResult?.status === "correct" || currentResult?.status === "awarding") return;
+    return {
+      ...(currentResult ?? {}),
+      uid: currentUser.uid,
+      challengeId: currentChallengeId,
+      status: "wrong",
+      answer,
+      wrongAttempts: Number(currentResult?.wrongAttempts ?? 0) + 1,
+      createdAt: currentResult?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+    };
+  });
+
+  if (!penaltyReservation.committed) {
+    return { skippedBecauseCorrect: true };
+  }
+
+  const pointResult = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
+    const points = Number(currentPoints ?? 0);
+    return Math.max(0, points - WRONG_ANSWER_PENALTY);
+  });
+
+  if (!pointResult.committed) {
+    throw new Error("오답 감점에 실패했습니다. 다시 시도해 주세요.");
+  }
+
+  const remainingPoints = Number(pointResult.snapshot.val() ?? 0);
+  await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: remainingPoints });
+  return { skippedBecauseCorrect: false, remainingPoints };
 }
 
 async function saveSubmission(answer, status) {
