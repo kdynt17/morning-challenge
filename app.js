@@ -28,7 +28,7 @@ import { firebaseConfig } from "./firebase-config.js";
 const ADMIN_LOGIN = "admin@admin";
 const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
-const WRONG_ANSWER_PENALTY = 5;
+const WRONG_ANSWER_PENALTY = 10;
 
 const $ = (selector) => document.querySelector(selector);
 const setupRequired = firebaseConfig.apiKey.startsWith("PASTE_");

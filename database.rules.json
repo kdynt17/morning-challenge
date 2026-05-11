@@ -42,7 +42,7 @@
       "$dateKey": {
         "$uid": {
           ".read": "auth != null",
-          ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (auth.uid == $uid && newData.child('uid').val() == auth.uid && (newData.child('status').val() == 'correct' || newData.child('status').val() == 'awarding')))"
+          ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (auth.uid == $uid && newData.child('uid').val() == auth.uid && (newData.child('status').val() == 'correct' || newData.child('status').val() == 'awarding' || newData.child('status').val() == 'wrong')))"
         }
       }
     },
