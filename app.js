@@ -264,10 +264,16 @@ function renderProfile(user, profile) {
 }
 
 async function syncLeaderboardProfile(uid, profile) {
-  if (!uid || profile?.role === "teacher") return;
+  if (!uid) return;
+
+  if (profile?.role === "teacher") {
+    await remove(ref(db, `leaderboardUsers/${uid}`));
+    return;
+  }
 
   await set(ref(db, `leaderboardUsers/${uid}`), {
     name: profile?.name || "학생",
+    role: "student",
     points: Number(profile?.points ?? 0),
     todayResult: profile?.todayResult ?? "-",
     updatedAt: serverTimestamp(),
@@ -380,17 +386,42 @@ function renderChallengeAvailability() {
 function subscribeLeaderboard() {
   const studentsQuery = query(ref(db, "leaderboardUsers"), orderByChild("points"), limitToLast(30));
 
-  const unsubscribe = onValue(studentsQuery, (snapshot) => {
+  const unsubscribe = onValue(studentsQuery, async (snapshot) => {
     if (!snapshot.exists()) {
       leaderboardList.innerHTML = `<p class="empty-text">아직 포인트 기록이 없습니다.</p>`;
       return;
     }
 
     const students = [];
+    const studentChecks = [];
     snapshot.forEach((child) => {
-      const student = child.val();
-      students.push(student);
+      studentChecks.push((async () => {
+        const student = child.val();
+        let profile = null;
+
+        try {
+          const profileSnapshot = await get(ref(db, `users/${child.key}`));
+          profile = profileSnapshot.exists() ? profileSnapshot.val() : null;
+        } catch (error) {
+          profile = null;
+        }
+
+        if (profile?.role === "teacher" || student?.role === "teacher") {
+          if (isTeacher(currentProfile, currentUser)) {
+            void remove(ref(db, `leaderboardUsers/${child.key}`));
+          }
+          return;
+        }
+
+        students.push({
+          ...student,
+          name: profile?.name ?? student?.name,
+          points: profile?.points ?? student?.points,
+          todayResult: profile?.todayResult ?? student?.todayResult,
+        });
+      })());
     });
+    await Promise.all(studentChecks);
     students.sort((a, b) => Number(b.points ?? 0) - Number(a.points ?? 0));
 
     leaderboardList.innerHTML = students.length
@@ -508,7 +539,9 @@ function subscribeAdminStudents() {
     if (snapshot.exists()) {
       snapshot.forEach((child) => {
         const student = child.val();
-        if (student.role !== "teacher") {
+        if (student.role === "teacher") {
+          void remove(ref(db, `leaderboardUsers/${child.key}`));
+        } else {
           adminStudents.push({ id: child.key, ...student });
           void syncLeaderboardProfile(child.key, student);
         }
