@@ -69,6 +69,7 @@ const deleteChallengeButton = $("#delete-challenge-button");
 const productForm = $("#product-form");
 const adminProductList = $("#admin-product-list");
 const adminPurchaseList = $("#admin-purchase-list");
+const adminUsedList = $("#admin-used-list");
 const pointGrantForm = $("#point-grant-form");
 const grantStudentSelect = $("#grant-student-id");
 const grantPointsInput = $("#grant-points");
@@ -508,7 +509,8 @@ function subscribePurchaseHistory() {
 
 function renderPurchaseHistoryItem(item) {
   const used = Boolean(item.used);
-  const usedMeta = used ? ` · 사용 완료 ${formatDateTime(item.usedAt)}` : "";
+  const usedBy = item.usedByName ? ` · 처리: ${item.usedByName}` : "";
+  const usedMeta = used ? ` · 사용 완료 ${formatDateTime(item.usedAt)}${usedBy}` : "";
 
   return `
     <article class="history-item">
@@ -531,13 +533,20 @@ async function handlePurchaseUse(purchaseId) {
   if (!ok) return;
 
   try {
-    await update(ref(db, `purchases/${purchaseId}`), {
-      used: true,
-      usedAt: serverTimestamp(),
-    });
+    await markPurchaseUsed(purchaseId);
   } catch (error) {
     setMessage(profileMessage, error.message || "구매 내역을 정리하지 못했습니다.");
   }
+}
+
+async function markPurchaseUsed(purchaseId) {
+  await update(ref(db, `purchases/${purchaseId}`), {
+    used: true,
+    usedAt: serverTimestamp(),
+    usedBy: currentUser.uid,
+    usedByName: currentProfile?.name ?? currentUser.displayName ?? currentUser.email ?? "",
+    usedByRole: isTeacher(currentProfile, currentUser) ? "teacher" : "student",
+  });
 }
 
 function subscribeAdminTools() {
@@ -623,11 +632,11 @@ function renderAdminProductItem(product) {
 }
 
 function subscribeAdminPurchases() {
-  if (!adminPurchaseList) return;
+  if (!adminPurchaseList && !adminUsedList) return;
 
   const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
     if (!snapshot.exists()) {
-      adminPurchaseList.innerHTML = `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
+      renderAdminPurchaseLists([]);
       return;
     }
 
@@ -635,18 +644,33 @@ function subscribeAdminPurchases() {
     snapshot.forEach((child) => {
       purchases.push({ id: child.key, ...child.val() });
     });
-    purchases.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
-
-    adminPurchaseList.innerHTML = purchases.length
-      ? purchases.map(renderAdminPurchaseItem).join("")
-      : `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
+    renderAdminPurchaseLists(purchases);
   });
   unsubscribers.push(unsubscribe);
 }
 
+function renderAdminPurchaseLists(purchases) {
+  const purchaseItems = [...purchases].sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+  const usedItems = purchases
+    .filter((item) => item.used)
+    .sort((a, b) => Number(b.usedAt ?? 0) - Number(a.usedAt ?? 0));
+
+  if (adminPurchaseList) {
+    adminPurchaseList.innerHTML = purchaseItems.length
+      ? purchaseItems.map(renderAdminPurchaseItem).join("")
+      : `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
+  }
+
+  if (adminUsedList) {
+    adminUsedList.innerHTML = usedItems.length
+      ? usedItems.map(renderAdminUsedItem).join("")
+      : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
+  }
+}
+
 function renderAdminPurchaseItem(item) {
   const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
-  const status = item.used ? `사용 완료 ${formatDateTime(item.usedAt)}` : "미사용";
+  const status = item.used ? `사용 완료 ${formatDateTime(item.usedAt)}` : "보유 중";
   const pinned = item.productPinned ? " · 고정 상품" : "";
 
   return `
@@ -654,6 +678,20 @@ function renderAdminPurchaseItem(item) {
       <div>
         <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
         <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · ${formatDateTime(item.createdAt)} · ${escapeHtml(status)}${escapeHtml(pinned)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function renderAdminUsedItem(item) {
+  const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
+  const pinned = item.productPinned ? " · 고정 상품" : "";
+
+  return `
+    <article class="admin-list-item">
+      <div>
+        <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
+        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · 사용 ${formatDateTime(item.usedAt)} · 구매 ${formatDateTime(item.createdAt)}${escapeHtml(pinned)}</p>
       </div>
     </article>
   `;
