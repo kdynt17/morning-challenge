@@ -395,12 +395,31 @@ label {
 }
 
 .history-list {
+  display: flex;
+  flex-direction: column;
   grid-template-columns: 1fr;
   max-height: min(42vh, 360px);
 }
 
 .history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
+  min-width: 0;
+}
+
+.purchase-history-item {
+  flex: 0 0 auto;
+}
+
+.purchase-history-item > div:first-child {
+  min-width: 0;
+}
+
+.purchase-history-item .rank-name,
+.purchase-history-item .rank-meta {
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 
 .admin-list-item-checked {
