@@ -68,6 +68,7 @@ const challengeForm = $("#challenge-form");
 const deleteChallengeButton = $("#delete-challenge-button");
 const productForm = $("#product-form");
 const adminProductList = $("#admin-product-list");
+const adminPurchaseList = $("#admin-purchase-list");
 const pointGrantForm = $("#point-grant-form");
 const grantStudentSelect = $("#grant-student-id");
 const grantPointsInput = $("#grant-points");
@@ -459,7 +460,7 @@ function subscribeStore() {
       const product = child.val();
       if (product.visible !== false) products.push({ id: child.key, ...product });
     });
-    products.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+    sortStoreProducts(products);
 
     storeList.innerHTML = products.length
       ? products.map(renderProductItem).join("")
@@ -471,6 +472,13 @@ function subscribeStore() {
     });
   });
   unsubscribers.push(unsubscribe);
+}
+
+function sortStoreProducts(products) {
+  products.sort((a, b) => {
+    if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+    return Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0);
+  });
 }
 
 function subscribePurchaseHistory() {
@@ -499,15 +507,18 @@ function subscribePurchaseHistory() {
 }
 
 function renderPurchaseHistoryItem(item) {
+  const used = Boolean(item.used);
+  const usedMeta = used ? ` · 사용 완료 ${formatDateTime(item.usedAt)}` : "";
+
   return `
     <article class="history-item">
       <div>
         <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${formatDateTime(item.createdAt)}</p>
+        <p class="rank-meta">${formatDateTime(item.createdAt)}${escapeHtml(usedMeta)}</p>
       </div>
       <div class="history-actions">
         <span class="rank-points">-${Number(item.price ?? 0)}점</span>
-        <button class="secondary-button inline-action-button" type="button" data-use-purchase-id="${escapeAttribute(item.id)}">사용 완료</button>
+        <button class="secondary-button inline-action-button" type="button" data-use-purchase-id="${escapeAttribute(item.id)}"${used ? " disabled" : ""}>${used ? "사용 완료" : "사용 완료"}</button>
       </div>
     </article>
   `;
@@ -520,7 +531,10 @@ async function handlePurchaseUse(purchaseId) {
   if (!ok) return;
 
   try {
-    await remove(ref(db, `purchases/${purchaseId}`));
+    await update(ref(db, `purchases/${purchaseId}`), {
+      used: true,
+      usedAt: serverTimestamp(),
+    });
   } catch (error) {
     setMessage(profileMessage, error.message || "구매 내역을 정리하지 못했습니다.");
   }
@@ -530,6 +544,7 @@ function subscribeAdminTools() {
   if (!isTeacher(currentProfile, currentUser)) return;
   subscribeAdminStudents();
   subscribeAdminProducts();
+  subscribeAdminPurchases();
 }
 
 function subscribeAdminStudents() {
@@ -579,7 +594,7 @@ function subscribeAdminProducts() {
       const product = child.val();
       if (product.visible !== false) products.push({ id: child.key, ...product });
     });
-    products.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+    sortStoreProducts(products);
 
     adminProductList.innerHTML = products.length
       ? products.map(renderAdminProductItem).join("")
@@ -593,7 +608,7 @@ function subscribeAdminProducts() {
 }
 
 function renderAdminProductItem(product) {
-  const status = product.visible === false ? "삭제 또는 판매 완료" : "판매 중";
+  const status = product.visible === false ? "삭제 또는 판매 완료" : product.pinned ? "고정 · 판매 중" : "판매 중";
   const disabled = product.visible === false ? " disabled" : "";
 
   return `
@@ -607,16 +622,54 @@ function renderAdminProductItem(product) {
   `;
 }
 
+function subscribeAdminPurchases() {
+  if (!adminPurchaseList) return;
+
+  const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
+    if (!snapshot.exists()) {
+      adminPurchaseList.innerHTML = `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
+      return;
+    }
+
+    const purchases = [];
+    snapshot.forEach((child) => {
+      purchases.push({ id: child.key, ...child.val() });
+    });
+    purchases.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+
+    adminPurchaseList.innerHTML = purchases.length
+      ? purchases.map(renderAdminPurchaseItem).join("")
+      : `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
+  });
+  unsubscribers.push(unsubscribe);
+}
+
+function renderAdminPurchaseItem(item) {
+  const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
+  const status = item.used ? `사용 완료 ${formatDateTime(item.usedAt)}` : "미사용";
+  const pinned = item.productPinned ? " · 고정 상품" : "";
+
+  return `
+    <article class="admin-list-item">
+      <div>
+        <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
+        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · ${formatDateTime(item.createdAt)} · ${escapeHtml(status)}${escapeHtml(pinned)}</p>
+      </div>
+    </article>
+  `;
+}
+
 function renderProductItem(product) {
   const image = product.imageUrl
     ? `<img class="product-image" src="${escapeAttribute(product.imageUrl)}" alt="" loading="lazy" />`
     : `<div class="product-placeholder">상품</div>`;
+  const pinnedLabel = product.pinned ? "고정 상품 · " : "";
 
   return `
     <article class="product-card">
       ${image}
       <div class="product-body">
-        <p class="eyebrow">${Number(product.price ?? 0)}점</p>
+        <p class="eyebrow">${pinnedLabel}${Number(product.price ?? 0)}점</p>
         <h3>${escapeHtml(product.title ?? "상품")}</h3>
         <p>${escapeHtml(product.description ?? "")}</p>
         <button type="button" data-product-id="${product.id}">자세히 보기</button>
@@ -649,6 +702,7 @@ async function handlePurchase() {
   }
 
   const price = Number(selectedProduct.price ?? 0);
+  const isPinnedProduct = Boolean(selectedProduct.pinned);
   buyProductButton.disabled = true;
 
   try {
@@ -669,15 +723,21 @@ async function handlePurchase() {
       uid: currentUser.uid,
       productId: selectedProduct.id,
       productTitle: selectedProduct.title,
+      productPinned: isPinnedProduct,
+      studentName: currentProfile?.name ?? currentUser.displayName ?? "",
+      studentEmail: currentProfile?.email ?? currentUser.email ?? "",
       price,
       remainingPoints: remaining,
+      used: false,
       createdAt: serverTimestamp(),
     });
-    await update(ref(db, `storeProducts/${selectedProduct.id}`), {
-      visible: false,
-      purchasedBy: currentUser.uid,
-      purchasedAt: serverTimestamp(),
-    });
+    if (!isPinnedProduct) {
+      await update(ref(db, `storeProducts/${selectedProduct.id}`), {
+        visible: false,
+        purchasedBy: currentUser.uid,
+        purchasedAt: serverTimestamp(),
+      });
+    }
     setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${remaining}점입니다.`);
     dialogBalance.textContent = `현재 잔액 ${remaining}점`;
     dialogAfterBalance.textContent = `구매 후 잔액 ${remaining}점`;
@@ -917,12 +977,14 @@ async function handleProductSave(event) {
     const title = $("#admin-product-title").value.trim();
     const description = $("#admin-product-description").value.trim();
     const price = Number($("#admin-product-price").value);
+    const pinned = $("#admin-product-pinned").checked;
     const imageUrl = await getImageValue("#admin-product-image-url", "#admin-product-image-file");
 
     await set(push(ref(db, "storeProducts")), {
       title,
       description,
       price,
+      pinned,
       imageUrl,
       visible: true,
       createdBy: currentUser.uid,
