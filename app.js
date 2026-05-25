@@ -276,7 +276,7 @@ async function syncLeaderboardProfile(uid, profile) {
     latestProfile = profile;
   }
 
-  if (latestProfile?.role === "teacher") {
+  if (latestProfile?.role !== "student") {
     await remove(ref(db, `leaderboardUsers/${uid}`));
     return;
   }
@@ -415,7 +415,7 @@ function subscribeLeaderboard() {
           profile = null;
         }
 
-        if (profile?.role === "teacher" || student?.role === "teacher") {
+        if (profile?.role !== "student") {
           if (isTeacher(currentProfile, currentUser)) {
             void remove(ref(db, `leaderboardUsers/${child.key}`));
           }
