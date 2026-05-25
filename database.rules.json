@@ -82,7 +82,7 @@
       ".indexOn": ["points"],
       "$uid": {
         ".write": "auth != null && ((auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student') || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-        ".validate": "newData.hasChildren(['name', 'points', 'todayResult']) && newData.child('name').isString() && newData.child('points').isNumber() && newData.child('points').val() >= 0"
+        ".validate": "newData.hasChildren(['name', 'points', 'todayResult']) && !newData.child('role').exists() && newData.child('name').isString() && newData.child('points').isNumber() && newData.child('points').val() >= 0"
       }
     },
 

@@ -268,16 +268,24 @@ function renderProfile(user, profile) {
 async function syncLeaderboardProfile(uid, profile) {
   if (!uid) return;
 
-  if (profile?.role === "teacher") {
+  let latestProfile = profile;
+
+  try {
+    const profileSnapshot = await get(ref(db, `users/${uid}`));
+    if (profileSnapshot.exists()) latestProfile = profileSnapshot.val();
+  } catch (error) {
+    latestProfile = profile;
+  }
+
+  if (latestProfile?.role === "teacher") {
     await remove(ref(db, `leaderboardUsers/${uid}`));
     return;
   }
 
   await set(ref(db, `leaderboardUsers/${uid}`), {
-    name: profile?.name || "학생",
-    role: "student",
-    points: Number(profile?.points ?? 0),
-    todayResult: profile?.todayResult ?? "-",
+    name: latestProfile?.name || "학생",
+    points: Number(latestProfile?.points ?? 0),
+    todayResult: latestProfile?.todayResult ?? "-",
     updatedAt: serverTimestamp(),
   });
 }
