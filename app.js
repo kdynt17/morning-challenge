@@ -68,6 +68,7 @@ const challengeForm = $("#challenge-form");
 const deleteChallengeButton = $("#delete-challenge-button");
 const productForm = $("#product-form");
 const adminProductList = $("#admin-product-list");
+const adminPurchaseList = $("#admin-purchase-list");
 const adminUsedList = $("#admin-used-list");
 const pointGrantForm = $("#point-grant-form");
 const grantStudentSelect = $("#grant-student-id");
@@ -648,7 +649,7 @@ function renderAdminProductItem(product) {
 }
 
 function subscribeAdminPurchases() {
-  if (!adminUsedList) return;
+  if (!adminPurchaseList && !adminUsedList) return;
 
   const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
     if (!snapshot.exists()) {
@@ -666,17 +667,41 @@ function subscribeAdminPurchases() {
 }
 
 function renderAdminPurchaseLists(purchases) {
+  const purchaseItems = [...purchases].sort((a, b) => getTimestampValue(b.createdAt) - getTimestampValue(a.createdAt));
   const usedItems = purchases
     .filter((item) => item.used)
     .sort((a, b) => getTimestampValue(b.usedAt) - getTimestampValue(a.usedAt));
 
-  adminUsedList.innerHTML = usedItems.length
-    ? usedItems.map(renderAdminUsedItem).join("")
-    : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
+  if (adminPurchaseList) {
+    adminPurchaseList.innerHTML = purchaseItems.length
+      ? purchaseItems.map(renderAdminPurchaseItem).join("")
+      : `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
+  }
 
-  adminUsedList.querySelectorAll("input[data-admin-check-use-id]").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => handleAdminUsedCheck(checkbox.dataset.adminCheckUseId, checkbox.checked));
-  });
+  if (adminUsedList) {
+    adminUsedList.innerHTML = usedItems.length
+      ? usedItems.map(renderAdminUsedItem).join("")
+      : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
+
+    adminUsedList.querySelectorAll("input[data-admin-check-use-id]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => handleAdminUsedCheck(checkbox.dataset.adminCheckUseId, checkbox.checked));
+    });
+  }
+}
+
+function renderAdminPurchaseItem(item) {
+  const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
+  const status = item.used ? `사용 완료 ${formatDateTime(item.usedAt)}` : "보유 중";
+  const pinned = item.productPinned ? " · 고정 상품" : "";
+
+  return `
+    <article class="admin-list-item">
+      <div>
+        <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
+        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · 구매 ${formatDateTime(item.createdAt)} · ${escapeHtml(status)}${escapeHtml(pinned)}</p>
+      </div>
+    </article>
+  `;
 }
 
 function renderAdminUsedItem(item) {

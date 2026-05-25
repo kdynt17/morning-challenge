@@ -371,6 +371,7 @@ label {
 .scroll-list {
   max-height: min(58vh, 520px);
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   padding-right: 4px;
 }
@@ -387,10 +388,19 @@ label {
 
 .history-item,
 .admin-list-item {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--soft);
+}
+
+.history-list {
+  grid-template-columns: 1fr;
+  max-height: min(42vh, 360px);
+}
+
+.history-item {
+  width: 100%;
 }
 
 .admin-list-item-checked {
@@ -560,7 +570,7 @@ label {
   margin-top: 18px;
 }
 
-.profile-card div {
+.profile-card dl > div {
   display: flex;
   justify-content: space-between;
   gap: 14px;
@@ -568,7 +578,7 @@ label {
   border-bottom: 1px solid var(--line);
 }
 
-.profile-card div:last-child {
+.profile-card dl > div:last-child {
   border-bottom: 0;
   padding-bottom: 0;
 }
