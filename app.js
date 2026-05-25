@@ -502,7 +502,7 @@ function subscribePurchaseHistory() {
       const item = child.val();
       if (item.uid === currentUser.uid) purchases.push({ id: child.key, ...item });
     });
-    purchases.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+    purchases.sort((a, b) => getTimestampValue(b.createdAt) - getTimestampValue(a.createdAt));
 
     purchaseHistoryList.innerHTML = purchases.length
       ? purchases.map(renderPurchaseHistoryItem).join("")
@@ -517,8 +517,7 @@ function subscribePurchaseHistory() {
 
 function renderPurchaseHistoryItem(item) {
   const used = Boolean(item.used);
-  const usedBy = item.usedByName ? ` · 처리: ${item.usedByName}` : "";
-  const usedMeta = used ? ` · 사용 완료 ${formatDateTime(item.usedAt)}${usedBy}` : "";
+  const usedMeta = used ? ` · 사용 완료 ${formatDateTime(item.usedAt)}` : "";
 
   return `
     <article class="history-item">
@@ -537,7 +536,7 @@ function renderPurchaseHistoryItem(item) {
 async function handlePurchaseUse(purchaseId) {
   if (!currentUser || !purchaseId) return;
 
-  const ok = confirm("이 구매 내역을 사용 완료로 정리할까요?");
+  const ok = confirm("이 상품을 사용하시겠습니까?");
   if (!ok) return;
 
   try {
@@ -548,12 +547,22 @@ async function handlePurchaseUse(purchaseId) {
 }
 
 async function markPurchaseUsed(purchaseId) {
-  await update(ref(db, `purchases/${purchaseId}`), {
+  const purchaseRef = ref(db, `purchases/${purchaseId}`);
+  const snapshot = await get(purchaseRef);
+
+  if (!snapshot.exists()) {
+    throw new Error("구매 내역을 찾을 수 없습니다.");
+  }
+
+  const purchase = snapshot.val();
+  if (purchase.uid !== currentUser.uid) {
+    throw new Error("본인의 구매 내역만 사용할 수 있습니다.");
+  }
+
+  await set(purchaseRef, {
+    ...purchase,
     used: true,
     usedAt: serverTimestamp(),
-    usedBy: currentUser.uid,
-    usedByName: currentProfile?.name ?? currentUser.displayName ?? currentUser.email ?? "",
-    usedByRole: isTeacher(currentProfile, currentUser) ? "teacher" : "student",
   });
 }
 
@@ -658,10 +667,10 @@ function subscribeAdminPurchases() {
 }
 
 function renderAdminPurchaseLists(purchases) {
-  const purchaseItems = [...purchases].sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+  const purchaseItems = [...purchases].sort((a, b) => getTimestampValue(b.createdAt) - getTimestampValue(a.createdAt));
   const usedItems = purchases
     .filter((item) => item.used)
-    .sort((a, b) => Number(b.usedAt ?? 0) - Number(a.usedAt ?? 0));
+    .sort((a, b) => getTimestampValue(b.usedAt) - getTimestampValue(a.usedAt));
 
   if (adminPurchaseList) {
     adminPurchaseList.innerHTML = purchaseItems.length
@@ -1172,12 +1181,20 @@ function getKoreaDateKey() {
 
 function formatDateTime(timestamp) {
   if (!timestamp) return "방금";
-  return new Date(Number(timestamp)).toLocaleString("ko-KR", {
+  return new Date(getTimestampValue(timestamp)).toLocaleString("ko-KR", {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getTimestampValue(timestamp) {
+  if (!timestamp) return 0;
+  if (typeof timestamp === "number") return timestamp;
+  if (typeof timestamp === "string") return Number(timestamp) || 0;
+  if (typeof timestamp === "object") return Number(timestamp.timestamp ?? timestamp.seconds ?? timestamp._seconds ?? 0);
+  return 0;
 }
 
 function authErrorMessage(code) {
