@@ -68,7 +68,6 @@ const challengeForm = $("#challenge-form");
 const deleteChallengeButton = $("#delete-challenge-button");
 const productForm = $("#product-form");
 const adminProductList = $("#admin-product-list");
-const adminPurchaseList = $("#admin-purchase-list");
 const adminUsedList = $("#admin-used-list");
 const pointGrantForm = $("#point-grant-form");
 const grantStudentSelect = $("#grant-student-id");
@@ -649,7 +648,7 @@ function renderAdminProductItem(product) {
 }
 
 function subscribeAdminPurchases() {
-  if (!adminPurchaseList && !adminUsedList) return;
+  if (!adminUsedList) return;
 
   const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
     if (!snapshot.exists()) {
@@ -667,51 +666,57 @@ function subscribeAdminPurchases() {
 }
 
 function renderAdminPurchaseLists(purchases) {
-  const purchaseItems = [...purchases].sort((a, b) => getTimestampValue(b.createdAt) - getTimestampValue(a.createdAt));
   const usedItems = purchases
     .filter((item) => item.used)
     .sort((a, b) => getTimestampValue(b.usedAt) - getTimestampValue(a.usedAt));
 
-  if (adminPurchaseList) {
-    adminPurchaseList.innerHTML = purchaseItems.length
-      ? purchaseItems.map(renderAdminPurchaseItem).join("")
-      : `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
-  }
+  adminUsedList.innerHTML = usedItems.length
+    ? usedItems.map(renderAdminUsedItem).join("")
+    : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
 
-  if (adminUsedList) {
-    adminUsedList.innerHTML = usedItems.length
-      ? usedItems.map(renderAdminUsedItem).join("")
-      : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
-  }
-}
-
-function renderAdminPurchaseItem(item) {
-  const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
-  const status = item.used ? `사용 완료 ${formatDateTime(item.usedAt)}` : "보유 중";
-  const pinned = item.productPinned ? " · 고정 상품" : "";
-
-  return `
-    <article class="admin-list-item">
-      <div>
-        <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · ${formatDateTime(item.createdAt)} · ${escapeHtml(status)}${escapeHtml(pinned)}</p>
-      </div>
-    </article>
-  `;
+  adminUsedList.querySelectorAll("input[data-admin-check-use-id]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => handleAdminUsedCheck(checkbox.dataset.adminCheckUseId, checkbox.checked));
+  });
 }
 
 function renderAdminUsedItem(item) {
   const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
   const pinned = item.productPinned ? " · 고정 상품" : "";
+  const checked = Boolean(item.adminChecked);
+  const checkedMeta = checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : "";
 
   return `
-    <article class="admin-list-item">
+    <article class="admin-list-item${checked ? " admin-list-item-checked" : ""}">
       <div>
         <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · 사용 ${formatDateTime(item.usedAt)} · 구매 ${formatDateTime(item.createdAt)}${escapeHtml(pinned)}</p>
+        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · 사용 ${formatDateTime(item.usedAt)} · 구매 ${formatDateTime(item.createdAt)}${escapeHtml(pinned)}${escapeHtml(checkedMeta)}</p>
       </div>
+      <label class="admin-check-label">
+        <input type="checkbox" data-admin-check-use-id="${escapeAttribute(item.id)}"${checked ? " checked" : ""} />
+        확인
+      </label>
     </article>
   `;
+}
+
+async function handleAdminUsedCheck(purchaseId, checked) {
+  if (!isTeacher(currentProfile, currentUser) || !purchaseId) return;
+
+  try {
+    const purchaseRef = ref(db, `purchases/${purchaseId}`);
+    const snapshot = await get(purchaseRef);
+    if (!snapshot.exists()) return;
+
+    const purchase = snapshot.val();
+    await set(purchaseRef, {
+      ...purchase,
+      adminChecked: checked,
+      adminCheckedAt: checked ? serverTimestamp() : null,
+      adminCheckedBy: checked ? currentUser.uid : null,
+    });
+  } catch (error) {
+    setMessage(adminMessage, error.message || "사용 기록 확인 상태를 바꾸지 못했습니다.");
+  }
 }
 
 function renderProductItem(product) {
