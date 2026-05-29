@@ -816,6 +816,7 @@ async function handlePurchase() {
 
 async function handleAnswerSubmit(event) {
   event.preventDefault();
+  const submitButton = answerForm.querySelector("button");
 
   if (!currentUser || !currentChallengeId) {
     setMessage(answerMessage, "로그인 후 오늘의 문제를 불러와 주세요.");
@@ -831,6 +832,7 @@ async function handleAnswerSubmit(event) {
   }
 
   try {
+    submitButton.disabled = true;
     setMessage(answerMessage, "채점하는 중입니다.");
     const submittedHash = await hashText(normalizeAnswer(answer));
     const isCorrect = submittedHash === currentChallenge.answerHash;
@@ -857,7 +859,9 @@ async function handleAnswerSubmit(event) {
     }
 
     const reserveResult = await runTransaction(resultRef, (currentResult) => {
-      if (currentResult?.status === "correct" && Number.isFinite(Number(currentResult.awardedPoints))) return;
+      const status = currentResult?.status;
+      const awardedPoints = Number(currentResult?.awardedPoints);
+      if (status === "correct" || status === "awarding" || Number.isFinite(awardedPoints)) return;
       return {
         ...(currentResult ?? {}),
         uid: currentUser.uid,
@@ -873,7 +877,9 @@ async function handleAnswerSubmit(event) {
       answerInput.value = "";
       setMessage(
         answerMessage,
-        previousResult?.rank
+        previousResult?.status === "awarding"
+          ? "이미 정답을 처리하는 중입니다. 잠시 후 포인트를 확인해 주세요."
+          : previousResult?.rank
           ? `이미 정답 처리되었습니다. ${previousResult.rank}번째 정답으로 ${Number(previousResult.awardedPoints ?? 0)}점이 지급된 기록이 있습니다.`
           : "이미 정답 처리되었습니다. 포인트는 한 번만 지급됩니다.",
       );
@@ -926,6 +932,8 @@ async function handleAnswerSubmit(event) {
     setMessage(answerMessage, `정답입니다! ${rank}번째 정답으로 ${awardedPoints}점을 받았습니다.`);
   } catch (error) {
     setMessage(answerMessage, error.message || authErrorMessage(error.code));
+  } finally {
+    renderChallengeAvailability();
   }
 }
 
