@@ -1,0 +1,190 @@
+.dev-shell {
+  width: min(100%, 880px);
+  margin: 0 auto;
+  padding: 0 16px 48px;
+}
+
+.dev-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 22px 0 18px;
+}
+
+.dev-header h1 {
+  margin: 4px 0 0;
+  font-size: 28px;
+}
+
+.dev-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.small-link {
+  color: var(--blue);
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.dev-logout {
+  width: auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 14px;
+}
+
+.dev-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dev-stats > div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  text-align: center;
+}
+
+.dev-stats span {
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.dev-stats p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dev-stats .stat-pending span {
+  color: #b45309;
+}
+
+.dev-shell .admin-card {
+  margin-bottom: 16px;
+}
+
+.dev-filters {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dev-list {
+  display: grid;
+  gap: 8px;
+}
+
+.dev-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.dev-user-info {
+  min-width: 0;
+}
+
+.dev-user-name {
+  margin: 0;
+  font-weight: 900;
+}
+
+.dev-user-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.dev-user-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.dev-user-actions button {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.approve-button {
+  background: var(--green);
+  color: #ffffff;
+}
+
+.reject-button {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.neutral-button {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.status-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-rejected {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+.status-teacher {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+@media (max-width: 560px) {
+  .dev-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dev-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .dev-user {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dev-user-actions button {
+    flex: 1;
+  }
+}

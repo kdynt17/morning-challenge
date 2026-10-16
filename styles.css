@@ -673,3 +673,24 @@ label {
     margin: 0 auto;
   }
 }
+
+.link-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 16px;
+  border-radius: 8px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.text-button {
+  display: block;
+  margin: 10px auto 0;
+  padding: 6px 10px;
+  background: transparent;
+  color: var(--blue);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+}

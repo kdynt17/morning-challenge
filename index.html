@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>아침 창의력 챌린지</title>
     <meta http-equiv="Cache-Control" content="no-store" />
-    <link rel="stylesheet" href="styles.css?v=20260508-image-fit" />
-    <script type="module" src="app.js?v=20260529-single-award-lock"></script>
+    <link rel="stylesheet" href="styles.css?v=20261016-approval" />
+    <script type="module" src="app.js?v=20261016-approval"></script>
   </head>
   <body>
     <main>
@@ -27,6 +27,7 @@
               <label>비밀번호<input id="login-password" type="password" placeholder="비밀번호" autocomplete="current-password" required /></label>
               <button class="primary-button" type="submit">들어가기</button>
             </form>
+            <button id="forgot-password-button" class="text-button" type="button">비밀번호를 잊었어요</button>
           </section>
           <section id="signup-panel" class="auth-panel" aria-label="회원가입">
             <form id="signup-form" class="stack-form">
@@ -35,9 +36,21 @@
               <label>비밀번호<input id="signup-password" type="password" placeholder="6자 이상" autocomplete="new-password" minlength="6" required /></label>
               <button class="primary-button" type="submit">가입하고 시작하기</button>
             </form>
-            <p id="signup-message" class="helper-text">이메일 인증 없이 바로 가입됩니다.</p>
+            <p id="signup-message" class="helper-text">가입 후 선생님이 승인하면 이용할 수 있습니다.</p>
           </section>
           <p id="auth-message" class="helper-text">이메일과 비밀번호로 로그인하세요.</p>
+        </section>
+      </section>
+
+      <section id="pending-screen" class="auth-screen" hidden>
+        <div class="auth-hero">
+          <p class="eyebrow">Morning Quest</p>
+          <h1>아침 창의력 챌린지</h1>
+        </div>
+        <section class="auth-card" aria-label="가입 승인 대기">
+          <h2 id="pending-title">선생님 승인을 기다리고 있어요</h2>
+          <p id="pending-message" class="helper-text"></p>
+          <button id="pending-logout-button" class="secondary-button" type="button">로그아웃</button>
         </section>
       </section>
 
@@ -105,6 +118,7 @@
 
         <section id="admin-page" class="page" data-page="admin">
           <div class="section-title"><p class="eyebrow">Teacher</p><h2>선생님 관리</h2></div>
+          <a class="secondary-button link-button" href="developer/">가입자 관리 페이지 열기</a>
           <article class="admin-card">
             <h3>오늘 문제 올리기</h3>
             <form id="challenge-form" class="stack-form">

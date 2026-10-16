@@ -3,6 +3,7 @@ import {
   createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -34,6 +35,9 @@ const $ = (selector) => document.querySelector(selector);
 const setupRequired = firebaseConfig.apiKey.startsWith("PASTE_");
 
 const authScreen = $("#auth-screen");
+const pendingScreen = $("#pending-screen");
+const pendingTitle = $("#pending-title");
+const pendingMessage = $("#pending-message");
 const appShell = $("#app-shell");
 const showLoginButton = $("#show-login-button");
 const showSignupButton = $("#show-signup-button");
@@ -114,8 +118,10 @@ if (setupRequired) {
   showLoginButton.addEventListener("click", () => setAuthMode("login"));
   showSignupButton.addEventListener("click", () => setAuthMode("signup"));
   loginForm.addEventListener("submit", handleLogin);
+  $("#forgot-password-button").addEventListener("click", handlePasswordReset);
   signupForm.addEventListener("submit", handleSignup);
   logoutButton.addEventListener("click", () => signOut(auth));
+  $("#pending-logout-button").addEventListener("click", () => signOut(auth));
   answerInput.addEventListener("input", () => setMessage(answerMessage, ""));
   answerForm.addEventListener("submit", handleAnswerSubmit);
   challengeForm.addEventListener("submit", handleChallengeSave);
@@ -143,18 +149,55 @@ if (setupRequired) {
       return;
     }
 
-    showSignedIn();
     currentProfile = await ensureProfile(user);
-    renderProfile(user, currentProfile);
-    showPage("home");
-    subscribeProfile();
-    subscribeChallenge();
-    subscribeMyChallengeResult();
-    subscribeLeaderboard();
-    subscribeStore();
-    subscribePurchaseHistory();
-    subscribeAdminTools();
+    if (!isApproved(currentProfile, user)) {
+      waitForApproval();
+      return;
+    }
+    enterApp();
   });
+}
+
+function enterApp() {
+  showSignedIn();
+  renderProfile(currentUser, currentProfile);
+  showPage("home");
+  subscribeProfile();
+  subscribeChallenge();
+  subscribeMyChallengeResult();
+  subscribeLeaderboard();
+  subscribeStore();
+  subscribePurchaseHistory();
+  subscribeAdminTools();
+}
+
+function waitForApproval() {
+  showPendingApproval(currentProfile);
+  const unsubscribe = onValue(ref(db, `users/${currentUser.uid}`), async (snapshot) => {
+    if (!snapshot.exists()) return;
+    currentProfile = snapshot.val();
+    if (!isApproved(currentProfile, currentUser)) {
+      showPendingApproval(currentProfile);
+      return;
+    }
+    clearSubscriptions();
+    await syncLeaderboardProfile(currentUser.uid, currentProfile);
+    enterApp();
+  });
+  unsubscribers.push(unsubscribe);
+}
+
+function showPendingApproval(profile) {
+  document.body.classList.remove("is-authenticated");
+  authScreen.hidden = true;
+  appShell.hidden = true;
+  pendingScreen.hidden = false;
+
+  const rejected = profile?.status === "rejected";
+  pendingTitle.textContent = rejected ? "가입이 승인되지 않았습니다" : "선생님 승인을 기다리고 있어요";
+  pendingMessage.textContent = rejected
+    ? "선생님에게 확인해 주세요."
+    : `${profile?.name ?? "학생"} 님의 가입 신청이 접수되었습니다. 선생님이 승인하면 이 화면이 자동으로 넘어갑니다.`;
 }
 
 async function handleLogin(event) {
@@ -166,6 +209,28 @@ async function handleLogin(event) {
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    setMessage(authMessage, authErrorMessage(error.code));
+  }
+}
+
+async function handlePasswordReset() {
+  const email = $("#login-email").value.trim();
+  if (!email) {
+    setMessage(authMessage, "위 이메일 칸에 가입한 이메일을 먼저 입력하세요.");
+    $("#login-email").focus();
+    return;
+  }
+  if (normalizeLoginEmail(email) === ADMIN_AUTH_EMAIL) {
+    setMessage(authMessage, "관리자 계정은 Firebase 콘솔에서 비밀번호를 바꿔주세요.");
+    return;
+  }
+
+  try {
+    setMessage(authMessage, "재설정 메일을 보내는 중입니다.");
+    auth.languageCode = "ko";
+    await sendPasswordResetEmail(auth, email);
+    setMessage(authMessage, `${email}로 비밀번호 재설정 메일을 보냈습니다. 메일함(스팸함 포함)에서 링크를 눌러 새 비밀번호를 정하세요.`);
   } catch (error) {
     setMessage(authMessage, authErrorMessage(error.code));
   }
@@ -186,12 +251,12 @@ async function handleSignup(event) {
       email,
       authEmail: credential.user.email,
       role: "student",
+      status: "pending",
       points: 0,
       todayResult: "-",
       createdAt: serverTimestamp(),
     });
-    await syncLeaderboardProfile(credential.user.uid, { name, role: "student", points: 0, todayResult: "-" });
-    setMessage(signupMessage, "가입되었습니다.");
+    setMessage(signupMessage, "가입 신청이 완료되었습니다. 선생님 승인을 기다려 주세요.");
   } catch (error) {
     setMessage(signupMessage, authErrorMessage(error.code));
   }
@@ -229,6 +294,7 @@ async function ensureProfile(user) {
     email: isAdmin ? ADMIN_LOGIN : user.email,
     authEmail: user.email,
     role: isAdmin ? "teacher" : "student",
+    ...(isAdmin ? {} : { status: "pending" }),
     points: 0,
     todayResult: "-",
     createdAt: serverTimestamp(),
@@ -242,6 +308,11 @@ function subscribeProfile() {
   const unsubscribe = onValue(ref(db, `users/${currentUser.uid}`), (snapshot) => {
     if (!snapshot.exists()) return;
     currentProfile = snapshot.val();
+    if (!isApproved(currentProfile, currentUser)) {
+      clearSubscriptions();
+      waitForApproval();
+      return;
+    }
     renderProfile(currentUser, currentProfile);
     void syncLeaderboardProfile(currentUser.uid, currentProfile);
   });
@@ -281,6 +352,8 @@ async function syncLeaderboardProfile(uid, profile) {
     return;
   }
 
+  if (!isApproved(latestProfile)) return;
+
   await set(ref(db, `leaderboardUsers/${uid}`), {
     name: latestProfile?.name || "학생",
     points: Number(latestProfile?.points ?? 0),
@@ -303,12 +376,14 @@ function setAuthMode(mode) {
 function showSignedIn() {
   document.body.classList.add("is-authenticated");
   authScreen.hidden = true;
+  pendingScreen.hidden = true;
   appShell.hidden = false;
 }
 
 function showSignedOut() {
   document.body.classList.remove("is-authenticated");
   authScreen.hidden = false;
+  pendingScreen.hidden = true;
   appShell.hidden = true;
   setAuthMode("login");
   setMessage(authMessage, "이메일과 비밀번호로 로그인하세요.");
@@ -415,7 +490,7 @@ function subscribeLeaderboard() {
           profile = null;
         }
 
-        if (profile?.role !== "student") {
+        if (profile?.role !== "student" || !isApproved(profile)) {
           if (isTeacher(currentProfile, currentUser)) {
             void remove(ref(db, `leaderboardUsers/${child.key}`));
           }
@@ -580,6 +655,8 @@ function subscribeAdminStudents() {
       snapshot.forEach((child) => {
         const student = child.val();
         if (student.role === "teacher") {
+          void remove(ref(db, `leaderboardUsers/${child.key}`));
+        } else if (!isApproved(student)) {
           void remove(ref(db, `leaderboardUsers/${child.key}`));
         } else {
           adminStudents.push({ id: child.key, ...student });
@@ -1181,6 +1258,12 @@ function isTeacher(profile, user) {
   return profile?.role === "teacher" || user?.email === ADMIN_AUTH_EMAIL;
 }
 
+// 승인 기능 도입 전 가입자는 status가 없으므로 승인된 것으로 본다.
+function isApproved(profile, user) {
+  if (isTeacher(profile, user)) return true;
+  return !profile?.status || profile.status === "approved";
+}
+
 function normalizeLoginEmail(value) {
   return value === ADMIN_LOGIN ? ADMIN_AUTH_EMAIL : value;
 }
@@ -1218,6 +1301,7 @@ function authErrorMessage(code) {
   if (code === "auth/invalid-credential") return "아이디 또는 비밀번호를 확인해주세요.";
   if (code === "auth/unauthorized-domain") return "Firebase Authentication 승인 도메인에 kdynt17.github.io를 추가해주세요.";
   if (code === "auth/weak-password") return "비밀번호는 6자 이상이어야 합니다.";
+  if (code === "auth/missing-email") return "가입한 이메일을 입력해주세요.";
   if (code === "auth/too-many-requests") return "잠시 후 다시 시도해주세요.";
   if (code === "PERMISSION_DENIED") return "데이터베이스 규칙을 최신 버전으로 게시해주세요.";
   return "처리 중 문제가 생겼습니다.";
