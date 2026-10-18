@@ -237,8 +237,11 @@ if (setupRequired) {
       waitForApproval();
       return;
     }
-    const requested = new URLSearchParams(location.search).get("game");
-    enterApp(GAME_PAGES.includes(requested) ? requested : "home");
+    // 두뇌교실 화면의 아래 메뉴에서 ?page=store 처럼 들어오면 그 화면을 연다.
+    const params = new URLSearchParams(location.search);
+    const requested = params.get("game");
+    const requestedPage = params.get("page");
+    enterApp(GAME_PAGES.includes(requested) ? requested : ["leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
   });
 }
 
