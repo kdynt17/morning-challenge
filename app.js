@@ -1,3 +1,6 @@
+import {freeClient} from './academy/free-client.js';
+import {dayKey as academyDay,closesAt as academyEnd} from './academy/functions/domain.mjs';
+import {profileBrain,AREAS as ACADEMY_AREAS} from './academy/brain-score.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -30,19 +33,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
 import { firebaseConfig } from "./firebase-config.js";
-import { createMinesweeper } from "./minesweeper.js?v=20261018-brain";
 import { createCalc20 } from "./games/calc20.js?v=20261018-brain";
 import { createStroop } from "./games/stroop.js?v=20261018-brain";
 import { createMemory } from "./games/memory.js?v=20261018-brain";
 import {
   AREAS,
-  AREA_KEYS,
-  computeBrain,
-  levelFromXp,
-  pushRecent,
   scoreCalc,
   scoreFocus,
-  scoreLogic,
   scoreMemory,
 } from "./brain.js?v=20261018-brain";
 
@@ -51,45 +48,19 @@ const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 
 // ── 포인트 설계 ─────────────────────────────────────────────
-// 꾸준히 하는 학생(매일 출석 + 게임 포인트 상한)은 하루 약 44P → 2,000P까지 약 6~7주.
-// 가볍게 하는 학생(출석 + 게임 1~2판)은 하루 약 20~26P → 약 2달 반.
+// 출석10P + 5영역 도전50P + 영역별 연습10P(최대50P). 출석은 자정, 게임은 오전6시 기준.
 const ATTENDANCE_POINTS = 10;
 const STREAK_BONUS_EVERY = 7;
 const STREAK_BONUS_POINTS = 30;
-const DAILY_GAME_POINT_CAP = 30;
-const GAME_RULES = {
-  beginner: { label: "초급", rows: 9, cols: 9, mines: 10, points: 5, minMs: 2000 },
-  intermediate: { label: "중급", rows: 16, cols: 16, mines: 40, points: 12, minMs: 8000 },
-  expert: { label: "고급", rows: 16, cols: 30, mines: 99, points: 30, minMs: 25000 },
-};
-const MONTHLY_REWARDS = {
-  expert: [100, 60, 40],
-  intermediate: [60, 40, 20],
-  beginner: [30, 20, 10],
-};
-const DIFFICULTIES = ["beginner", "intermediate", "expert"];
-// 두뇌 트레이닝 게임: 끝까지 하면 +5P(하루 게임 포인트 상한에 포함), 기록은 월별 순위에 올라간다.
 const BRAIN_GAMES = {
-  calc: { label: "계산 20", area: "calc", points: 5, xp: 10, lowerIsBetter: true },
-  stroop: { label: "색깔 판단", area: "focus", points: 5, xp: 10, lowerIsBetter: true },
-  memory: { label: "순간 기억", area: "memory", points: 5, xp: 10, lowerIsBetter: false },
+  calc: { label: "계산 20", area: "calc", lowerIsBetter: true },
+  stroop: { label: "색깔 판단", area: "focus", lowerIsBetter: true },
+  memory: { label: "순간 기억", area: "memory", lowerIsBetter: false },
 };
-const MINES_XP = { beginner: 10, intermediate: 20, expert: 40 };
-const LOSS_XP = 2;
 const TUTORIAL_HIDDEN_PREFIX = "mc.tutorialHidden.";
 const LAST_EMAIL_KEY = "mc.lastEmail";
 const LAST_NAME_KEY = "mc.lastName";
 const TUTORIALS = {
-  mines: {
-    title: "지뢰찾기, 이렇게 해요",
-    steps: [
-      ["칸을 눌러 열어요.", "첫 칸은 항상 안전하고, 빈 칸 주변은 한 번에 열려요.", '<span class="ms-cell"></span><span class="ms-cell ms-open"></span><span class="ms-cell ms-open ms-n1">1</span>'],
-      ["숫자 = 주변 8칸의 지뢰 수.", "숫자를 보고 지뢰가 어디 있는지 추리해요.", '<span class="ms-cell ms-open ms-n1">1</span><span class="ms-cell ms-open ms-n2">2</span><span class="ms-cell ms-open ms-n3">3</span>'],
-      ["지뢰 같으면 깃발!", "PC는 오른쪽 클릭, 폰은 길게 누르거나 <em>깃발 모드</em>를 켜고 눌러요.", '<span class="ms-cell ms-flagged"><svg viewBox="0 0 24 24"><path d="M7 3v18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 4h10l-3 4 3 4H8z" fill="var(--ms-flag)"/></svg></span>'],
-      ["숫자 빨리 열기.", "깃발 수가 숫자와 같으면 숫자를 눌러 나머지 칸을 한 번에 열어요.", '<span class="ms-cell ms-open ms-n2">2</span>'],
-      ["지뢰 빼고 다 열면 성공!", "초급 +5P, 중급 +12P, 고급 +30P. 빨리 깰수록 추리력 점수가 올라가요.", '<span class="ms-cell ms-open tutorial-point">+P</span>'],
-    ],
-  },
   calc: {
     title: "계산 20, 이렇게 해요",
     steps: [
@@ -162,18 +133,11 @@ const purchaseMessage = $("#purchase-message");
 const attendanceButton = $("#attendance-button");
 const tutorialDialog = $("#tutorial-dialog");
 const resultDialog = $("#result-dialog");
-const msStatus = $("#ms-status");
-const msTimer = $("#ms-timer");
-const msMinesLeft = $("#ms-mines-left");
-const flagModeButton = $("#ms-flag-mode");
-const rewardPreview = $("#reward-preview");
-const rewardSubmitButton = $("#reward-submit-button");
 
-const GAME_PAGES = ["mines", "calc", "stroop", "memory"];
+const GAME_PAGES = ["calc", "stroop", "memory"];
 const pageNames = {
   home: "홈",
   games: "두뇌 트레이닝",
-  mines: "지뢰찾기",
   calc: "계산 20",
   stroop: "색깔 판단",
   memory: "순간 기억",
@@ -194,13 +158,7 @@ let rankUnsubscribe = null;
 let serverOffsetMs = 0;
 let attendance = null;
 let gameDaily = null;
-let monthBests = {};
-let allTimeBests = {};
-let currentDifficulty = "beginner";
-let currentRankTab = "brain";
-let game = null;
-let gameStarted = false;
-let timerHandle = null;
+let currentRankTab = "points";
 let tutorialsShownThisSession = new Set();
 let tutorialGame = null;
 let brainGames = {};
@@ -208,7 +166,6 @@ let brainData = null;
 let gameBests = {};
 let resultAgain = null;
 let resultSecondary = null;
-let rewardPlan = null;
 let toastTimer = null;
 let sessionDay = null;
 
@@ -237,25 +194,16 @@ if (setupRequired) {
   pointGrantForm.addEventListener("submit", handlePointGrant);
   buyProductButton.addEventListener("click", handlePurchase);
   attendanceButton.addEventListener("click", handleAttendance);
-  $("#reward-preview-button").addEventListener("click", previewMonthlyRewards);
-  $("#monthly-reward-form").addEventListener("submit", handleMonthlyRewards);
-  $("#reward-month").addEventListener("change", () => {
-    rewardPlan = null;
-    rewardSubmitButton.disabled = true;
-    rewardPreview.innerHTML = "";
-  });
 
   document.querySelectorAll("[data-target-page]").forEach((button) => {
     button.addEventListener("click", () => showPage(button.dataset.targetPage));
-  });
-  document.querySelectorAll("[data-difficulty]").forEach((button) => {
-    button.addEventListener("click", () => selectDifficulty(button.dataset.difficulty));
   });
   document.querySelectorAll("[data-rank-tab]").forEach((button) => {
     button.addEventListener("click", () => selectRankTab(button.dataset.rankTab));
   });
 
-  setupGame();
+  $("#result-again").addEventListener("click",()=>{resultDialog.close();resultAgain?.();});
+  $("#result-secondary").addEventListener("click",()=>{resultDialog.close();resultSecondary?.();});
   setupBrainGames();
   setupTutorial();
   setAuthMode("login");
@@ -276,8 +224,6 @@ if (setupRequired) {
     selectedProduct = null;
     attendance = null;
     gameDaily = null;
-    monthBests = {};
-    allTimeBests = {};
     brainData = null;
     gameBests = {};
 
@@ -291,7 +237,8 @@ if (setupRequired) {
       waitForApproval();
       return;
     }
-    enterApp();
+    const requested = new URLSearchParams(location.search).get("game");
+    enterApp(GAME_PAGES.includes(requested) ? requested : "home");
   });
 }
 
@@ -555,6 +502,7 @@ function showSignedOut() {
 }
 
 function showPage(page) {
+  if(page === "games" || page === "mines") { location.href="academy/"; return; }
   document.querySelectorAll(".page").forEach((section) => {
     section.classList.toggle("active-page", section.dataset.page === page);
   });
@@ -575,10 +523,6 @@ function showPage(page) {
   todayLabel.textContent = formatKoreanDate(serverNow());
   window.scrollTo({ top: 0 });
 
-  if (page === "mines") {
-    if (!gameStarted) startNewGame();
-    requestAnimationFrame(() => game.fitToWidth());
-  }
   if (GAME_PAGES.includes(page)) maybeShowTutorial(page);
 }
 
@@ -665,151 +609,8 @@ async function handleAttendance() {
   showToast("출석은 됐지만 포인트 반영에 실패했어요. 선생님께 말씀해 주세요.");
 }
 
-// ── 지뢰찾기 ────────────────────────────────────────────────
-
-function setupGame() {
-  game = createMinesweeper($("#ms-board"), {
-    onStart: () => {
-      startTimer();
-      msStatus.textContent = "깃발: PC는 오른쪽 클릭, 폰은 길게 누르기";
-      if (canSaveGame()) void bumpStat(currentDifficulty, "plays");
-    },
-    onChange: ({ state, minesLeft }) => {
-      msMinesLeft.textContent = minesLeft;
-      if (state === "lost") stopTimer();
-    },
-    onWin: (result) => void handleWin(result),
-    onLose: () => {
-      msStatus.textContent = "빨간 칸이 밟은 지뢰예요. 새 게임으로 다시 도전!";
-      openResult({
-        eyebrow: `지뢰찾기 ${GAME_RULES[currentDifficulty].label}`,
-        title: "틀렸습니다!",
-        time: "",
-        detail: "빨간 칸에 지뢰가 있었어요. 판을 확인하고 다시 도전해 보세요.",
-        lost: true,
-        again: startNewGame,
-        secondaryLabel: "판 보기",
-        secondary: () => {},
-      });
-      if (canSaveGame()) void recordBrain(null, null, LOSS_XP);
-    },
-  });
-
-  $("#ms-restart").addEventListener("click", startNewGame);
-  flagModeButton.addEventListener("click", () => {
-    const next = flagModeButton.getAttribute("aria-pressed") !== "true";
-    flagModeButton.setAttribute("aria-pressed", String(next));
-    $("#ms-flag-mode-label").textContent = next ? "깃발 모드 켜짐" : "깃발 모드 꺼짐";
-    game.setFlagMode(next);
-  });
-  $("#result-again").addEventListener("click", () => {
-    resultDialog.close();
-    resultAgain?.();
-  });
-  $("#result-secondary").addEventListener("click", () => {
-    resultDialog.close();
-    resultSecondary?.();
-  });
-
-  let resizeTimer = null;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => game.fitToWidth(), 120);
-  });
-}
-
-function selectDifficulty(difficulty) {
-  if (!GAME_RULES[difficulty]) return;
-  if (game.getState() === "playing" && difficulty !== currentDifficulty && !confirm("진행 중인 게임을 그만두고 난이도를 바꿀까요?")) {
-    return;
-  }
-  currentDifficulty = difficulty;
-  document.querySelectorAll("[data-difficulty]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.difficulty === difficulty);
-  });
-  startNewGame();
-}
-
-function startNewGame() {
-  const rule = GAME_RULES[currentDifficulty];
-  // 고급은 폰 화면에서 세로로 돌려 같은 칸 수(16×30)를 유지한다.
-  const vertical = currentDifficulty === "expert" && window.innerWidth < 720;
-  game.start({
-    rows: vertical ? rule.cols : rule.rows,
-    cols: vertical ? rule.rows : rule.cols,
-    mines: rule.mines,
-  });
-  gameStarted = true;
-  stopTimer();
-  msTimer.textContent = "0.0";
-  msStatus.textContent = "아무 칸이나 눌러서 시작하세요. 첫 칸은 항상 안전해요.";
-}
-
-function startTimer() {
-  stopTimer();
-  timerHandle = setInterval(() => {
-    msTimer.textContent = (game.getElapsedMs() / 1000).toFixed(1);
-  }, 100);
-}
-
-function stopTimer() {
-  clearInterval(timerHandle);
-  timerHandle = null;
-}
-
 function canSaveGame() {
   return Boolean(currentUser) && !isTeacher(currentProfile, currentUser);
-}
-
-async function handleWin({ timeMs }) {
-  stopTimer();
-  const difficulty = currentDifficulty;
-  const rule = GAME_RULES[difficulty];
-  msTimer.textContent = (timeMs / 1000).toFixed(1);
-  msStatus.textContent = `${rule.label} 성공! ${formatSeconds(timeMs)}`;
-
-  openResult({
-    eyebrow: `지뢰찾기 ${rule.label}`,
-    title: "성공!",
-    time: formatSeconds(timeMs),
-    detail: canSaveGame() ? "기록을 저장하는 중이에요…" : "선생님 계정은 기록과 포인트가 저장되지 않아요.",
-    again: startNewGame,
-    secondaryLabel: "순위 보기",
-    secondary: () => {
-      selectRankTab(difficulty);
-      showPage("leaderboard");
-    },
-  });
-  if (!canSaveGame()) return;
-
-  if (timeMs < rule.minMs) {
-    $("#result-detail").textContent = "기록이 비정상적으로 빨라서 저장하지 않았어요.";
-    return;
-  }
-
-  // 포인트와 기록은 따로 저장해서, 하나가 실패해도 나머지 결과는 정확히 알려 준다.
-  const [points, monthBest, allTimeBest] = await Promise.allSettled([
-    awardGamePoints(rule.points),
-    saveMonthRecord(difficulty, timeMs),
-    saveAllTimeBest(difficulty, timeMs),
-    bumpStat(difficulty, "wins"),
-    recordBrain("logic", scoreLogic(difficulty, timeMs), MINES_XP[difficulty]),
-  ]);
-  const rank = await getMonthRank(difficulty, currentUser.uid).catch(() => null);
-
-  const lines = [];
-  if (points.status === "rejected") {
-    lines.push("포인트를 반영하지 못했어요");
-  } else if (points.value > 0) {
-    lines.push(`+${points.value}P 획득!${points.value < rule.points ? " (오늘 게임 포인트 상한 도달)" : ""}`);
-  } else {
-    lines.push(`오늘 게임 포인트 ${DAILY_GAME_POINT_CAP}P를 다 모았어요. 기록은 저장돼요.`);
-  }
-  if (monthBest.status === "rejected") lines.push("기록을 저장하지 못했어요");
-  else if (allTimeBest.value) lines.push("내 역대 최고 기록 갱신!");
-  else if (monthBest.value) lines.push("이번 달 내 최고 기록 갱신!");
-  if (rank) lines.push(`이번 달 ${rule.label} ${rank}위`);
-  $("#result-detail").textContent = lines.join(" · ");
 }
 
 function openResult({ eyebrow, title, time, detail, lost = false, again, secondary, secondaryLabel = "순위 보기" }) {
@@ -825,119 +626,22 @@ function openResult({ eyebrow, title, time, detail, lost = false, again, seconda
   if (!resultDialog.open) resultDialog.showModal();
 }
 
-async function awardGamePoints(points) {
-  const today = kstDay(serverNow());
-  let granted = 0;
-  const result = await runTransaction(ref(db, `gameDaily/${currentUser.uid}`), (current) => {
-    const used = current?.day === today ? Number(current.points ?? 0) : 0;
-    granted = Math.max(0, Math.min(points, DAILY_GAME_POINT_CAP - used));
-    return { day: today, points: used + granted };
-  });
-  if (!result.committed || granted <= 0) return 0;
-  await addMyPoints(granted);
-  return granted;
-}
-
-async function saveMonthRecord(difficulty, timeMs) {
-  const month = kstMonthKey(serverNow());
-  const result = await runTransaction(ref(db, `msRecords/${month}/${difficulty}/${currentUser.uid}`), (current) => {
-    if (current && Number(current.timeMs) <= timeMs) return undefined;
-    return { name: currentProfile?.name ?? "학생", timeMs, at: serverNow() };
-  });
-  return result.committed;
-}
-
-async function saveAllTimeBest(difficulty, timeMs) {
-  const result = await runTransaction(ref(db, `msBest/${currentUser.uid}/${difficulty}`), (current) => {
-    if (current && Number(current.timeMs) <= timeMs) return undefined;
-    return { timeMs, at: serverNow() };
-  });
-  return result.committed;
-}
-
-async function bumpStat(difficulty, field) {
-  try {
-    await runTransaction(ref(db, `gameStats/${currentUser.uid}/${difficulty}/${field}`), (current) => Number(current ?? 0) + 1);
-  } catch (error) {
-    // 통계는 부가 정보라 실패해도 게임 진행에 영향을 주지 않는다.
-  }
-}
-
-async function getMonthRank(difficulty, uid) {
-  const month = kstMonthKey(serverNow());
-  const snapshot = await get(ref(db, `msRecords/${month}/${difficulty}`));
-  const records = [];
-  snapshot.forEach((child) => {
-    records.push({ uid: child.key, timeMs: Number(child.val().timeMs) });
-  });
-  records.sort((a, b) => a.timeMs - b.timeMs);
-  const index = records.findIndex((record) => record.uid === uid);
-  return index >= 0 ? index + 1 : null;
-}
-
 function subscribeGameDaily() {
-  const unsubscribe = onValue(ref(db, `gameDaily/${currentUser.uid}`), (snapshot) => {
-    gameDaily = snapshot.exists() ? snapshot.val() : null;
-    const today = kstDay(serverNow());
-    const used = gameDaily?.day === today ? Number(gameDaily.points ?? 0) : 0;
-    $("#daily-game-points").textContent = used;
-    $("#daily-game-fill").style.width = `${Math.min(1, used / DAILY_GAME_POINT_CAP) * 100}%`;
-  });
-  unsubscribers.push(unsubscribe);
+  unsubscribers.push(onValue(ref(db,`users/${currentUser.uid}`),snapshot=>{
+    const p=snapshot.val()||{};
+    const mask=p.practiceEnd===academyEnd(academyDay(serverNow()))?p.practiceMask||0:0;
+    const used=[1,2,4,8,16].filter(bit=>mask&bit).length*10;
+    $('#daily-game-points').textContent=used;
+    $('#daily-game-fill').style.width=used*2+'%';
+  }));
 }
 
 function subscribeMyBests() {
-  const month = kstMonthKey(serverNow());
-  DIFFICULTIES.forEach((difficulty) => {
-    const unsubscribe = onValue(ref(db, `msRecords/${month}/${difficulty}/${currentUser.uid}`), (snapshot) => {
-      monthBests[difficulty] = snapshot.exists() ? Number(snapshot.val().timeMs) : null;
-      renderBestGrid($("#my-best-list"), monthBests);
-      renderHubBests();
-    });
-    unsubscribers.push(unsubscribe);
-  });
-
-  Object.keys(BRAIN_GAMES).forEach((key) => {
-    const unsubscribeGame = onValue(ref(db, `records/${month}/${key}/${currentUser.uid}`), (snapshot) => {
-      gameBests[key] = snapshot.exists() ? Number(snapshot.val().value) : null;
-      $(`#${key}-best`).textContent = formatGameValue(key, gameBests[key]);
-      renderHubBests();
-    });
-    unsubscribers.push(unsubscribeGame);
-  });
-
-  const unsubscribe = onValue(ref(db, `msBest/${currentUser.uid}`), (snapshot) => {
-    const value = snapshot.val() ?? {};
-    allTimeBests = Object.fromEntries(DIFFICULTIES.map((d) => [d, value[d] ? Number(value[d].timeMs) : null]));
-    renderBestGrid($("#all-time-best-list"), allTimeBests);
-  });
-  unsubscribers.push(unsubscribe);
-  renderBestGrid($("#my-best-list"), monthBests);
-  renderBestGrid($("#all-time-best-list"), allTimeBests);
-}
-
-function renderHubBests() {
-  const minesBest = [...DIFFICULTIES].reverse().find((d) => monthBests[d]);
-  document.querySelector('[data-best="mines"]').textContent = minesBest
-    ? `이번 달 ${GAME_RULES[minesBest].label} ${formatSeconds(monthBests[minesBest])}`
-    : "이번 달 기록 없음";
-  Object.keys(BRAIN_GAMES).forEach((key) => {
-    document.querySelector(`[data-best="${key}"]`).textContent = gameBests[key] !== null && gameBests[key] !== undefined
-      ? `이번 달 최고 ${formatGameValue(key, gameBests[key])}`
-      : "이번 달 기록 없음";
-  });
-}
-
-function renderBestGrid(container, bests) {
-  container.innerHTML = DIFFICULTIES.map((difficulty) => {
-    const time = bests[difficulty];
-    return `
-      <div class="best-item">
-        <span class="best-label">${GAME_RULES[difficulty].label}</span>
-        <span class="best-time">${time ? formatSeconds(time) : "-"}</span>
-      </div>
-    `;
-  }).join("");
+  const month=kstMonthKey(serverNow());
+  Object.keys(BRAIN_GAMES).forEach(key=>unsubscribers.push(onValue(ref(db,`records/${month}/${key}/${currentUser.uid}`),s=>{
+    gameBests[key]=s.exists()?Number(s.val().value):null;
+    $(`#${key}-best`).textContent=formatGameValue(key,gameBests[key]);
+  })));
 }
 
 function setupTutorial() {
@@ -951,7 +655,6 @@ function setupTutorial() {
   });
   $("#show-tutorials-button").addEventListener("click", () => {
     Object.keys(TUTORIALS).forEach((key) => storeLocal(TUTORIAL_HIDDEN_PREFIX + key, null));
-    storeLocal("mc.minesweeperTutorialHidden", null);
     tutorialsShownThisSession = new Set();
     showToast("게임에 들어가면 설명서가 다시 나와요.");
   });
@@ -960,8 +663,7 @@ function setupTutorial() {
 function maybeShowTutorial(gameKey) {
   if (tutorialsShownThisSession.has(gameKey)) return;
   tutorialsShownThisSession.add(gameKey);
-  const hidden = readLocal(TUTORIAL_HIDDEN_PREFIX + gameKey) === "1"
-    || (gameKey === "mines" && readLocal("mc.minesweeperTutorialHidden") === "1");
+  const hidden = readLocal(TUTORIAL_HIDDEN_PREFIX + gameKey) === "1";
   if (!hidden) openTutorial(gameKey);
 }
 
@@ -990,10 +692,14 @@ function setupBrainGames() {
   });
 }
 
-function startBrainGame(key) {
-  if (resultDialog.open) resultDialog.close();
-  $(`#${key}-start`).hidden = true;
-  void brainGames[key].start();
+async function startBrainGame(key) {
+  try {
+    const end=academyEnd(academyDay(serverNow()));
+    if(!(await get(ref(db,`academy/sessions/${currentUser.uid}/${end}/done`))).val()) {showToast('오늘 5영역 도전을 먼저 완료해주세요.');return;}
+    if(resultDialog.open)resultDialog.close();
+    $(`#${key}-start`).hidden=true;
+    void brainGames[key].start();
+  } catch {showToast('게임 시작 조건을 확인하지 못했어요. 다시 시도해주세요.');}
 }
 
 async function handleBrainFinish(key, result) {
@@ -1025,21 +731,25 @@ async function handleBrainFinish(key, result) {
 
   const areaScoreValue = memory ? scoreMemory(result.level) : key === "calc" ? scoreCalc(result.adjustedMs) : scoreFocus(result.adjustedMs);
   const [points, record] = await Promise.allSettled([
-    completed ? awardGamePoints(config.points) : Promise.resolve(0),
+    awardCategoryPractice(key,areaScoreValue,completed),
     saveGameRecord(key, value, result),
-    recordBrain(config.area, areaScoreValue, config.xp),
   ]);
   const rank = await getGameRank(key, currentUser.uid).catch(() => null);
 
   const lines = [detailBase];
   if (points.status === "rejected") lines.push("포인트를 반영하지 못했어요");
   else if (points.value > 0) lines.push(`+${points.value}P`);
-  else if (completed) lines.push(`오늘 게임 포인트 ${DAILY_GAME_POINT_CAP}P를 다 모았어요`);
+  else if (completed) lines.push("이 영역의 오늘 연습 보상은 이미 받았어요");
   else lines.push(memory ? "숫자 3개 이상 성공하면 포인트를 받아요" : "10문제 이상 맞히면 포인트를 받아요");
   if (record.status === "fulfilled" && record.value) lines.push("이번 달 최고 기록!");
   lines.push(`${AREAS[config.area].label} +${areaScoreValue}점`);
   if (rank) lines.push(`이번 달 ${rank}위`);
   $("#result-detail").textContent = lines.join(" · ");
+}
+
+async function awardCategoryPractice(key,score,completed) {
+  const client=freeClient(db,currentUser);
+  try{return await client.completeLegacy(key,score,completed);}finally{client.stop();}
 }
 
 async function saveGameRecord(key, value, result) {
@@ -1075,120 +785,27 @@ function formatGameValue(key, value) {
 
 // ── 두뇌 지수 ───────────────────────────────────────────────
 
-// area가 null이면 경험치만 올린다(예: 지뢰찾기에서 졌을 때).
-async function recordBrain(area, score, xpGain) {
-  await runTransaction(ref(db, `brain/${currentUser.uid}`), (current) => {
-    const areas = { ...(current?.areas ?? {}) };
-    if (area) areas[area] = pushRecent(toList(areas[area]), score);
-    AREA_KEYS.forEach((key) => {
-      if (areas[key]) areas[key] = toList(areas[key]);
-    });
-    const { bq } = computeBrain(areas);
-    const next = {
-      name: currentProfile?.name ?? "학생",
-      areas,
-      xp: Number(current?.xp ?? 0) + xpGain,
-      updatedAt: serverNow(),
-    };
-    if (bq !== null) next.bq = bq;
-    return next;
-  });
-}
-
-function toList(value) {
-  if (!value) return [];
-  return Array.isArray(value) ? value.filter((v) => v !== null && v !== undefined) : Object.values(value);
-}
-
 function subscribeBrain() {
-  const unsubscribe = onValue(ref(db, `brain/${currentUser.uid}`), (snapshot) => {
-    brainData = snapshot.val();
-    renderBrain();
-  });
-  unsubscribers.push(unsubscribe);
+  unsubscribers.push(onValue(ref(db,`academy/history/${currentUser.uid}`),s=>{brainData=s.val()||{};renderBrain();}));
   renderBrain();
 }
 
 function renderBrain() {
-  const areas = Object.fromEntries(AREA_KEYS.map((key) => [key, toList(brainData?.areas?.[key])]));
-  const { scores, measured, bq, grade } = computeBrain(areas);
-  const xp = Number(brainData?.xp ?? 0);
-  const level = levelFromXp(xp);
-
-  $("#brain-bq").textContent = bq ?? "?";
-  $("#brain-grade").textContent = grade ?? `측정 ${measured}/4`;
-  $("#brain-grade").dataset.grade = grade ?? "";
-  $("#brain-level").textContent = level.level;
-  $("#xp-fill").style.width = `${Math.round(level.progress * 100)}%`;
-  $("#xp-text").textContent = `${xp - level.current} / ${level.next - level.current} XP`;
-  $("#brain-caption").textContent = bq
-    ? "최근 10판 중 잘한 3판으로 계산해요. 꾸준히 하면 올라가요!"
-    : `${AREA_KEYS.filter((key) => scores[key] === null).map((key) => AREAS[key].game).join(", ")}을(를) 해보면 두뇌 지수가 나와요`;
-
-  $("#area-bars").innerHTML = AREA_KEYS.map((key) => {
-    const value = scores[key];
-    return `
-      <div class="area-row">
-        <span class="area-label">${AREAS[key].label}</span>
-        <span class="area-track"><span class="area-fill" style="width:${value ?? 0}%"></span></span>
-        <span class="area-value">${value ?? "-"}</span>
-      </div>
-    `;
-  }).join("");
+  const p=profileBrain(brainData||{});
+  $('#brain-bq').textContent=p.grams===null?'?':p.grams+'g';
+  $('#brain-grade').textContent=p.grade?.name||'측정 '+p.measured+'/5';
+  $('#brain-caption').textContent='5영역 최근 7회 평균 · 재미로 보는 말랑그램';
+  $('#area-bars').innerHTML=ACADEMY_AREAS.map((a,i)=>`<div class="area-row"><span class="area-label">${a.label}</span><span class="area-track"><span class="area-fill" style="width:${p.areas[i]??0}%"></span></span><span class="area-value">${p.areas[i]??'-'}</span></div>`).join('');
 }
-
-// ── 순위 ────────────────────────────────────────────────────
 
 function selectRankTab(tab) {
-  currentRankTab = tab;
-  document.querySelectorAll("[data-rank-tab]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.rankTab === tab);
-  });
-  rankUnsubscribe?.();
-  rankUnsubscribe = null;
-  if (!currentUser) return;
-  leaderboardList.innerHTML = `<p class="empty-text">순위를 불러오고 있어요.</p>`;
-
-  if (tab === "points") {
-    rankCaption.textContent = "지금까지 모은 포인트 순위예요.";
-    subscribePointsLeaderboard();
-  } else if (tab === "brain") {
-    rankCaption.textContent = "두뇌 지수(BQ) 순위예요. 4가지 게임을 모두 해야 올라가요.";
-    subscribeBrainLeaderboard();
-  } else if (BRAIN_GAMES[tab]) {
-    const month = kstMonthKey(serverNow());
-    const [year, mon] = month.split("-");
-    rankCaption.textContent = `${year}년 ${Number(mon)}월 ${BRAIN_GAMES[tab].label} ${tab === "memory" ? "최대 기억 개수" : "최단 기록(틀린 문제 벌점 포함)"} 순위예요.`;
-    subscribeGameLeaderboard(tab, month);
-  } else {
-    const month = kstMonthKey(serverNow());
-    const [year, mon] = month.split("-");
-    const rewards = MONTHLY_REWARDS[tab].join("·");
-    rankCaption.textContent = `${year}년 ${Number(mon)}월 ${GAME_RULES[tab].label} 최단 기록 순위예요. 월말 TOP 3는 ${rewards}P 보너스!`;
-    subscribeRecordLeaderboard(tab, month);
-  }
-}
-
-function subscribeRecordLeaderboard(difficulty, month) {
-  const recordsQuery = query(ref(db, `msRecords/${month}/${difficulty}`), orderByChild("timeMs"), limitToFirst(30));
-  rankUnsubscribe = onValue(recordsQuery, (snapshot) => {
-    const records = [];
-    snapshot.forEach((child) => {
-      records.push({ uid: child.key, ...child.val() });
-    });
-    records.sort((a, b) => Number(a.timeMs) - Number(b.timeMs));
-    leaderboardList.innerHTML = records.length
-      ? records.map((record, index) => renderRankItem({
-          index,
-          name: record.name,
-          meta: formatDateTime(record.at),
-          value: formatSeconds(record.timeMs),
-          mine: record.uid === currentUser?.uid,
-        })).join("")
-      : `<p class="empty-text">이번 달 첫 기록의 주인공이 되어 보세요!</p>`;
-  }, () => {
-    leaderboardList.innerHTML = `<p class="empty-text">순위를 불러오지 못했어요. 데이터베이스 규칙을 확인해 주세요.</p>`;
-  });
+  if(tab!=='points'&&!BRAIN_GAMES[tab])tab='points';
+  currentRankTab=tab;
+  document.querySelectorAll('[data-rank-tab]').forEach(b=>b.classList.toggle('active',b.dataset.rankTab===tab));
+  rankUnsubscribe?.();rankUnsubscribe=null;
+  if(!currentUser)return;
+  if(tab==='points'){rankCaption.textContent='현재 포인트 순위';subscribePointsLeaderboard();}
+  else{rankCaption.textContent=BRAIN_GAMES[tab].label+' 월별 추가 연습 기록';subscribeGameLeaderboard(tab,kstMonthKey(serverNow()));}
 }
 
 function subscribeGameLeaderboard(key, month) {
@@ -1209,29 +826,6 @@ function subscribeGameLeaderboard(key, month) {
           mine: row.uid === currentUser?.uid,
         })).join("")
       : `<p class="empty-text">이번 달 첫 기록의 주인공이 되어 보세요!</p>`;
-  }, () => {
-    leaderboardList.innerHTML = `<p class="empty-text">순위를 불러오지 못했어요. 데이터베이스 규칙을 확인해 주세요.</p>`;
-  });
-}
-
-function subscribeBrainLeaderboard() {
-  const brainQuery = query(ref(db, "brain"), orderByChild("bq"), limitToLast(40));
-  rankUnsubscribe = onValue(brainQuery, (snapshot) => {
-    const rows = [];
-    snapshot.forEach((child) => {
-      const value = child.val();
-      if (Number.isFinite(Number(value.bq))) rows.push({ uid: child.key, ...value });
-    });
-    rows.sort((a, b) => b.bq - a.bq);
-    leaderboardList.innerHTML = rows.length
-      ? rows.map((row, index) => renderRankItem({
-          index,
-          name: row.name,
-          meta: `${computeBrain(Object.fromEntries(AREA_KEYS.map((k) => [k, toList(row.areas?.[k])]))).grade ?? ""} · Lv.${levelFromXp(Number(row.xp ?? 0)).level}`,
-          value: `BQ ${row.bq}`,
-          mine: row.uid === currentUser?.uid,
-        })).join("")
-      : `<p class="empty-text">아직 두뇌 지수가 나온 친구가 없어요. 4가지 게임을 해보세요!</p>`;
   }, () => {
     leaderboardList.innerHTML = `<p class="empty-text">순위를 불러오지 못했어요. 데이터베이스 규칙을 확인해 주세요.</p>`;
   });
@@ -1510,7 +1104,6 @@ async function handlePurchase() {
 
 function subscribeAdminTools() {
   if (!isTeacher(currentProfile, currentUser)) return;
-  $("#reward-month").value = previousMonthKey(kstMonthKey(serverNow()));
   subscribeAdminStudents();
   subscribeAdminProducts();
   subscribeAdminPurchases();
@@ -1773,117 +1366,6 @@ async function grantPoints(studentId, student, amount, reason) {
     createdAt: serverTimestamp(),
   });
 }
-
-async function previewMonthlyRewards() {
-  if (!isTeacher(currentProfile, currentUser)) return;
-  const month = $("#reward-month").value;
-  if (!month) return;
-
-  rewardPlan = null;
-  rewardSubmitButton.disabled = true;
-  rewardSubmitButton.textContent = "보상 지급하기";
-  if (month >= kstMonthKey(serverNow())) {
-    rewardPreview.innerHTML = `<p class="empty-text">${month}은(는) 아직 끝나지 않은 달이에요. 다음 달에 지급할 수 있어요.</p>`;
-    return;
-  }
-  rewardPreview.innerHTML = `<p class="empty-text">순위를 계산하고 있어요.</p>`;
-
-  try {
-    const done = await get(ref(db, `monthlyRewards/${month}`));
-    if (done.exists()) {
-      const record = done.val();
-      const winners = Object.values(record.winners ?? {});
-      const paid = record.paid ?? {};
-      const unpaid = winners.map((item, index) => ({ ...item, index })).filter((item) => !paid[item.index]);
-      rewardPreview.innerHTML = renderRewardRows(winners.map((item, index) => ({ ...item, index })), paid);
-      rewardPreview.insertAdjacentHTML("afterbegin", `<p class="helper-text no-margin">${unpaid.length ? `지급이 중간에 멈췄어요. 남은 ${unpaid.length}건을 이어서 지급할 수 있어요.` : `이 달 보상은 이미 모두 지급했어요 (${formatDateTime(record.grantedAt)}).`}</p>`);
-      if (unpaid.length) {
-        rewardPlan = { month, plan: unpaid, resume: true };
-        rewardSubmitButton.disabled = false;
-        rewardSubmitButton.textContent = `남은 ${unpaid.length}건 지급하기`;
-      }
-      return;
-    }
-
-    const plan = [];
-    for (const difficulty of [...DIFFICULTIES].reverse()) {
-      const snapshot = await get(ref(db, `msRecords/${month}/${difficulty}`));
-      const records = [];
-      snapshot.forEach((child) => {
-        records.push({ uid: child.key, ...child.val() });
-      });
-      records.sort((a, b) => Number(a.timeMs) - Number(b.timeMs));
-      records.slice(0, 3).forEach((record, index) => {
-        plan.push({
-          uid: record.uid,
-          name: record.name ?? "학생",
-          difficulty,
-          rank: index + 1,
-          timeMs: Number(record.timeMs),
-          points: MONTHLY_REWARDS[difficulty][index],
-        });
-      });
-    }
-
-    if (!plan.length) {
-      rewardPreview.innerHTML = `<p class="empty-text">${month} 기록이 없어요.</p>`;
-      return;
-    }
-
-    plan.forEach((item, index) => {
-      item.index = index;
-    });
-    rewardPreview.innerHTML = renderRewardRows(plan, {});
-    rewardPlan = { month, plan, resume: false };
-    rewardSubmitButton.disabled = false;
-  } catch (error) {
-    rewardPreview.innerHTML = `<p class="empty-text">순위를 불러오지 못했어요. 데이터베이스 규칙을 확인해 주세요.</p>`;
-  }
-}
-
-function renderRewardRows(items, paid) {
-  return items.map((item) => `
-    <article class="admin-list-item${paid[item.index] ? " admin-list-item-checked" : ""}">
-      <div>
-        <p class="rank-name">${GAME_RULES[item.difficulty]?.label ?? ""} ${item.rank}위 · ${escapeHtml(item.name)}</p>
-        <p class="rank-meta">${formatSeconds(item.timeMs)}${paid[item.index] ? " · 지급 완료" : ""}</p>
-      </div>
-      <span class="rank-points">+${item.points}P</span>
-    </article>
-  `).join("");
-}
-
-async function handleMonthlyRewards(event) {
-  event.preventDefault();
-  if (!rewardPlan || !isTeacher(currentProfile, currentUser)) return;
-  const { month, plan, resume } = rewardPlan;
-  const total = plan.reduce((sum, item) => sum + item.points, 0);
-  if (!confirm(`${month} 순위 보상 ${plan.length}건, 총 ${total}P를 지급할까요?`)) return;
-
-  rewardSubmitButton.disabled = true;
-  try {
-    if (!resume) {
-      // 먼저 지급 계획을 저장해 두 번 지급되는 것을 막고, 중간에 멈추면 이어서 지급할 수 있게 한다.
-      await set(ref(db, `monthlyRewards/${month}`), {
-        grantedAt: serverTimestamp(),
-        grantedBy: currentUser.uid,
-        winners: plan.map(({ uid, name, difficulty, rank, timeMs, points }) => ({ uid, name, difficulty, rank, timeMs, points })),
-      });
-    }
-    for (const item of plan) {
-      const student = adminStudents.find((s) => s.id === item.uid) ?? { name: item.name };
-      await grantPoints(item.uid, student, item.points, `${month} 지뢰찾기 ${GAME_RULES[item.difficulty]?.label ?? ""} ${item.rank}위`);
-      await set(ref(db, `monthlyRewards/${month}/paid/${item.index}`), true);
-    }
-    rewardPlan = null;
-    setMessage(adminMessage, `${month} 순위 보상 ${plan.length}건을 지급했습니다.`);
-  } catch (error) {
-    setMessage(adminMessage, "보상 지급이 중간에 멈췄습니다. '순위 미리보기'를 다시 눌러 남은 보상을 이어서 지급해 주세요.");
-  }
-  await previewMonthlyRewards();
-}
-
-// ── 공통 ────────────────────────────────────────────────────
 
 async function addMyPoints(amount) {
   const result = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
