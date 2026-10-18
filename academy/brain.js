@@ -9,6 +9,11 @@ const fmt = (n) => Number(n || 0).toLocaleString('ko-KR');
 const gameOf = (id) => GAMES.find((g) => g.id === id);
 const MEDALS = ['🥇', '🥈', '🥉'];
 const RANK_LIMIT = 10;
+const EXTRA_PRACTICE = [
+  {id:'stroop',category:0,name:'색깔 판단',help:'글자 뜻이 아닌 색깔을 골라요. 20문제 중 10문제 이상 정답이면 성공.'},
+  {id:'memory',category:1,name:'순간 기억 · 단계 도전',help:'숫자 위치를 기억해요. 최대 3개 이상 성공하면 보상 조건 달성.'},
+  {id:'calc',category:3,name:'계산 20',help:'20문제를 풀어요. 10문제 이상 정답이면 성공.'},
+];
 
 const mascot = (pose, cls = '') => `<img class="mascot ${cls}" src="assets/mascot-${pose}.webp" alt="" width="160" height="160" draggable="false" />`;
 
@@ -125,7 +130,7 @@ export function mountBrain({ app, db, user, root }) {
               <button class="practice-toggle" type="button" data-open="${g.id}" aria-expanded="${openGame === g.id}"><b>${esc(g.name)}</b><span>${esc(g.help)}</span></button>
               ${openGame === g.id ? `<div class="practice-detail">${board(best[g.id] || {}, 3)}</div>` : ''}
               <button data-practice="${g.id}" class="btn btn-go btn-small" type="button" ${mine ? '' : 'disabled'}>연습</button>
-            </div>`).join('')}</div>
+            </div>`).join('')}${EXTRA_PRACTICE.filter(g=>g.category===i).map(g=>`<div class="practice-game"><div class="practice-toggle"><b>${g.name}</b><span>${g.help}</span></div>${mine?`<a class="btn btn-go btn-small" href="../?game=${g.id}">추가 연습</a>`:'<button class="btn btn-go btn-small" disabled>도전 완료 후 열림</button>'}</div>`).join('')}</div>
         </div>`).join('')}
       </section>`;
 

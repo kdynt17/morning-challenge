@@ -4,7 +4,7 @@ export const GAMES = [
   { id: 'mole', name: '그림두더지', category: 0, help: '목표 그림과 같은 그림을 고르세요.' },
   { id: 'focus', name: '가운데만 봐', category: 0, help: '주변 화살표를 무시하고 가운데 화살표 방향을 고르세요.' },
   { id: 'largest', name: '최고 숫자', category: 0, help: '글자 크기가 아니라 숫자 값이 가장 큰 것을 고르세요.' },
-  { id: 'memory', name: '순간기억', category: 1, help: '숫자 위치를 기억한 뒤, 숫자가 사라지면 작은 수부터 누르세요.' },
+  { id: 'memory', name: '순간기억 60초', category: 1, help: '숫자 위치를 기억한 뒤, 숫자가 사라지면 작은 수부터 누르세요.' },
   { id: 'sequence', name: '순서기억', category: 1, help: '차례로 켜지는 칸을 기억하고 같은 순서로 누르세요.' },
   { id: 'blocks', name: '블록매치', category: 2, help: '블록을 눌러 제거하고 목표 모양과 똑같이 만드세요.' },
   { id: 'balance', name: '저울비교', category: 2, help: '비교 관계를 보고 가장 무거운 도형을 고르세요.' },

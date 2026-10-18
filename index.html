@@ -16,8 +16,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-    <link rel="stylesheet" href="styles.css?v=20261018-brain" />
-    <script type="module" src="app.js?v=20261018-brain"></script>
+    <link rel="stylesheet" href="styles.css?v=20261019-categories" />
+    <script type="module" src="app.js?v=20261019-categories"></script>
   </head>
   <body>
     <main>
@@ -95,19 +95,16 @@
 
           <article class="card brain-hero">
             <div class="brain-top">
-              <p class="card-label">내 두뇌 지수</p>
-              <span class="level-chip">Lv.<b id="brain-level">1</b></span>
+              <p class="card-label">나의 말랑그램</p>
+
             </div>
             <div class="brain-figure">
               <p class="hero-figure"><span id="brain-bq">?</span></p>
               <span id="brain-grade" class="grade-badge">측정 중</span>
             </div>
             <div id="area-bars" class="area-bars"></div>
-            <div class="xp-row">
-              <div class="meter meter-xp"><span id="xp-fill" class="meter-fill"></span></div>
-              <span id="xp-text" class="xp-text">0 / 25 XP</span>
-            </div>
-            <p id="brain-caption" class="meter-caption">4가지 게임을 한 번씩 해보면 두뇌 지수가 나와요</p>
+
+            <p id="brain-caption" class="meter-caption">5영역을 해보면 말랑그램이 나와요</p>
           </article>
 
           <article class="card attendance-card">
@@ -123,8 +120,8 @@
 
           <div class="stat-row">
             <article class="card stat-tile">
-              <p class="card-label">오늘 게임 포인트</p>
-              <p class="stat-value"><span id="daily-game-points">0</span><small> / 30P</small></p>
+              <p class="card-label">오늘 연습 보상</p>
+              <p class="stat-value"><span id="daily-game-points">0</span><small> / 50P</small></p>
               <div class="meter meter-small"><span id="daily-game-fill" class="meter-fill"></span></div>
             </article>
             <article class="card stat-tile">
@@ -134,87 +131,15 @@
             </article>
           </div>
 
-          <a class="primary-button big-cta" href="academy/" style="display:block;text-align:center;text-decoration:none;margin:16px 0">두뇌교실 13게임 · 말랑그램 →</a>
-          <button class="primary-button big-cta" type="button" data-target-page="games">오늘의 두뇌 트레이닝 하러 가기 →</button>
+          <a class="primary-button big-cta" href="academy/" style="display:block;text-align:center;text-decoration:none;margin:16px 0">5영역 두뇌교실 · 16게임 →</a>
+          <a class="secondary-button link-button" href="rules.html">새 게임·포인트 규칙 보기</a>
         </section>
 
         <!-- 게임 목록 -->
-        <section id="games-page" class="page" data-page="games">
-<a class="primary-button big-cta" href="academy/" style="display:block;text-align:center;text-decoration:none;margin:16px 0">두뇌교실 13게임 · 말랑그램 →</a>
-          <p class="helper-text no-margin">게임마다 키우는 두뇌 영역이 달라요. 아래 기존 4게임의 포인트는 합쳐 하루 30P까지! 두뇌교실 보상은 별도예요.</p>
-          <div class="game-cards">
-            <button class="game-card game-card-mines" type="button" data-target-page="mines">
-              <span class="game-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3v18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 4h10l-3 4 3 4H8z" fill="currentColor"/></svg></span>
-              <span class="game-card-title">지뢰찾기</span>
-              <span class="game-card-meta">추리력 · +5/12/30P</span>
-              <span class="game-card-best" data-best="mines">-</span>
-            </button>
-            <button class="game-card game-card-calc" type="button" data-target-page="calc">
-              <span class="game-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 6h5M8.5 3.5v5M13 6h5M6 16.5l4 4M10 16.5l-4 4M13 16h5M13 20h5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>
-              <span class="game-card-title">계산 20</span>
-              <span class="game-card-meta">계산력 · +5P</span>
-              <span class="game-card-best" data-best="calc">-</span>
-            </button>
-            <button class="game-card game-card-stroop" type="button" data-target-page="stroop">
-              <span class="game-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8.5" cy="9" r="4.5" fill="#e2483d"/><circle cx="15.5" cy="9" r="4.5" fill="#2f5bea" opacity=".9"/><circle cx="12" cy="15" r="4.5" fill="#12925e" opacity=".9"/></svg></span>
-              <span class="game-card-title">색깔 판단</span>
-              <span class="game-card-meta">집중력 · +5P</span>
-              <span class="game-card-best" data-best="stroop">-</span>
-            </button>
-            <button class="game-card game-card-memory" type="button" data-target-page="memory">
-              <span class="game-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="2" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="2" fill="currentColor"/><rect x="14" y="14" width="7" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg></span>
-              <span class="game-card-title">순간 기억</span>
-              <span class="game-card-meta">기억력 · +5P</span>
-              <span class="game-card-best" data-best="memory">-</span>
-            </button>
-            <div class="game-card game-card-soon" aria-disabled="true">
-              <span class="game-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 16h6a3 3 0 0 0 3-3V9a3 3 0 0 1 3-3h4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="6" r="1.6" fill="currentColor"/></svg></span>
-              <span class="game-card-title">스네이크</span>
-              <span class="game-card-meta">곧 열려요</span>
-            </div>
-          </div>
-        </section>
+        <section id="games-page" class="page" data-page="games"><a href="academy/">5영역 두뇌교실 열기</a></section>
 
-        <!-- 지뢰찾기 -->
-        <section id="mines-page" class="page" data-page="mines">
-          <div class="game-topbar">
-            <button class="back-button" type="button" data-target-page="games">← 게임</button>
-            <span class="area-tag">추리력</span>
-            <button class="help-button" type="button" data-help="mines" aria-label="지뢰찾기 설명서"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8M12 17h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
-          </div>
-          <div class="difficulty-tabs" role="tablist" aria-label="난이도">
-            <button class="active" type="button" role="tab" data-difficulty="beginner">초급<small>9×9 · +5P</small></button>
-            <button type="button" role="tab" data-difficulty="intermediate">중급<small>16×16 · +12P</small></button>
-            <button type="button" role="tab" data-difficulty="expert">고급<small>16×30 · +30P</small></button>
-          </div>
 
-          <div class="ms-toolbar">
-            <div class="ms-counter" aria-label="남은 지뢰">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="currentColor"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              <span id="ms-mines-left">10</span>
-            </div>
-            <button id="ms-restart" class="ms-restart" type="button">새 게임</button>
-            <div class="ms-counter" aria-label="경과 시간">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M12 9v4l2.5 2M9.5 2.5h5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-              <span id="ms-timer">0.0</span>
-            </div>
-          </div>
 
-          <div class="ms-wrap">
-            <div id="ms-board" role="grid" aria-label="지뢰찾기 판"></div>
-          </div>
-
-          <button id="ms-flag-mode" class="mode-toggle" type="button" aria-pressed="false">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 4h10l-3 4 3 4H8z" fill="currentColor"/></svg>
-            <span id="ms-flag-mode-label">깃발 모드 꺼짐</span>
-          </button>
-          <p id="ms-status" class="helper-text center-text">아무 칸이나 눌러서 시작하세요. 첫 칸은 항상 안전해요.</p>
-
-          <article class="card my-bests">
-            <p class="card-label">이번 달 내 최고 기록</p>
-            <div id="my-best-list" class="best-grid"></div>
-          </article>
-        </section>
 
         <section id="calc-page" class="page" data-page="calc">
           <div class="game-topbar">
@@ -264,13 +189,13 @@
         <!-- 순위 -->
         <section id="leaderboard-page" class="page" data-page="leaderboard">
           <div class="chip-tabs" role="tablist" aria-label="순위 종류">
-            <button class="active" type="button" role="tab" data-rank-tab="brain">두뇌 지수</button>
+
             <button type="button" role="tab" data-rank-tab="calc">계산 20</button>
             <button type="button" role="tab" data-rank-tab="stroop">색깔 판단</button>
             <button type="button" role="tab" data-rank-tab="memory">순간 기억</button>
-            <button type="button" role="tab" data-rank-tab="beginner">지뢰 초급</button>
-            <button type="button" role="tab" data-rank-tab="intermediate">지뢰 중급</button>
-            <button type="button" role="tab" data-rank-tab="expert">지뢰 고급</button>
+
+
+
             <button type="button" role="tab" data-rank-tab="points">포인트</button>
           </div>
           <p id="rank-caption" class="helper-text no-margin"></p>
@@ -284,7 +209,7 @@
         </section>
 
         <!-- 내 정보 -->
-        <section id="profile-page" class="page" data-page="profile">
+        <section id="profile-page" class="page" data-page="profile"><a href="rules.html" class="secondary-button link-button">게임·포인트 규칙 보기</a>
           <article class="card profile-card">
             <dl>
               <div><dt>이름</dt><dd id="profile-name">-</dd></div>
@@ -300,10 +225,7 @@
             <h3>앱처럼 쓰기</h3>
             <p class="helper-text no-margin">홈 화면에 추가하면 앱처럼 바로 열리고 로그인도 유지돼요.<br />아이폰: 사파리 공유 버튼 → <b>홈 화면에 추가</b><br />안드로이드: 크롬 메뉴(⋮) → <b>홈 화면에 추가</b><br />카카오톡 안에서 열면 로그인이 자주 풀려요. 크롬이나 사파리로 열어 주세요.</p>
           </article>
-          <article class="card profile-card">
-            <h3>지뢰찾기 전체 최고 기록</h3>
-            <div id="all-time-best-list" class="best-grid"></div>
-          </article>
+
           <article class="card profile-card">
             <h3>구매 내역</h3>
             <div id="purchase-history-list" class="history-list scroll-list">
@@ -320,16 +242,7 @@
             <p id="admin-attendance-summary" class="helper-text no-margin">불러오고 있어요.</p>
             <div id="admin-attendance-list" class="chip-list"></div>
           </article>
-          <article class="card admin-card">
-            <h3>월말 지뢰찾기 순위 보상</h3>
-            <p class="helper-text no-margin">난이도별 TOP 3에게 보너스를 줍니다. 고급 100·60·40P, 중급 60·40·20P, 초급 30·20·10P. 한 달에 한 번만 지급돼요.</p>
-            <form id="monthly-reward-form" class="stack-form">
-              <label>보상할 달<input id="reward-month" type="month" required /></label>
-              <button class="secondary-button" type="button" id="reward-preview-button">순위 미리보기</button>
-              <div id="reward-preview" class="admin-list"></div>
-              <button class="primary-button" type="submit" id="reward-submit-button" disabled>보상 지급하기</button>
-            </form>
-          </article>
+
           <article class="card admin-card">
             <h3>상점 상품 추가</h3>
             <form id="product-form" class="stack-form">
