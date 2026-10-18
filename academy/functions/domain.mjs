@@ -29,8 +29,11 @@ export function rng(seed) {
   return () => { n += 0x6D2B79F5; let t = Math.imul(n ^ n >>> 15, 1 | n); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
 export function lineup(day) { const r = rng(day); return CATEGORIES.map((_, i) => { const games = GAMES.filter(g => g.category === i); return games[Math.floor(r() * games.length)].id; }); }
+// 테스트용 계정은 순위·보상·학생 목록에서 뺀다. (test1@test.com)
+export const HIDDEN_UIDS = new Set(['7RyjceEPTygQef2iDZPYcKPxRwv1']);
+export const isHiddenUid = (uid) => HIDDEN_UIDS.has(uid);
 export function rankings(records = {}) {
-  const rows = Object.entries(records).map(([uid, r]) => ({ ...r, uid })).sort((a, b) => b.score - a.score || a.uid.localeCompare(b.uid));
+  const rows = Object.entries(records).filter(([uid]) => !isHiddenUid(uid)).map(([uid, r]) => ({ ...r, uid })).sort((a, b) => b.score - a.score || a.uid.localeCompare(b.uid));
   return rows.map((r, i) => ({ ...r, rank: rows.findIndex(x => x.score === r.score) + 1 }));
 }
 export function settle(state, now) {

@@ -1,5 +1,5 @@
 import {freeClient} from './academy/free-client.js';
-import {dayKey as academyDay,closesAt as academyEnd} from './academy/functions/domain.mjs';
+import {dayKey as academyDay,closesAt as academyEnd,isHiddenUid} from './academy/functions/domain.mjs';
 import {mountBrain,brainSummary} from './academy/brain.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
@@ -461,7 +461,7 @@ async function syncLeaderboardProfile(uid, profile) {
     latestProfile = profile;
   }
 
-  if (latestProfile?.role !== "student") {
+  if (latestProfile?.role !== "student" || isHiddenUid(uid)) {
     await remove(ref(db, `leaderboardUsers/${uid}`));
     return;
   }
@@ -889,7 +889,7 @@ function subscribePointsLeaderboard() {
           profile = null;
         }
 
-        if (profile?.role !== "student" || !isApproved(profile)) {
+        if (profile?.role !== "student" || !isApproved(profile) || isHiddenUid(child.key)) {
           if (isTeacher(currentProfile, currentUser)) {
             void remove(ref(db, `leaderboardUsers/${child.key}`));
           }
@@ -1156,7 +1156,7 @@ function subscribeAdminStudents() {
     if (snapshot.exists()) {
       snapshot.forEach((child) => {
         const student = child.val();
-        if (student.role === "teacher") {
+        if (student.role === "teacher" || isHiddenUid(child.key)) {
           void remove(ref(db, `leaderboardUsers/${child.key}`));
         } else if (!isApproved(student)) {
           void remove(ref(db, `leaderboardUsers/${child.key}`));
@@ -1178,6 +1178,7 @@ function subscribeAdminAttendance() {
   const unsubscribe = onValue(ref(db, `attendanceDays/${today}`), (snapshot) => {
     const names = [];
     snapshot.forEach((child) => {
+      if (isHiddenUid(child.key)) return;
       names.push({ name: child.val().name ?? "학생", at: child.val().at });
     });
     names.sort((a, b) => getTimestampValue(a.at) - getTimestampValue(b.at));
@@ -1369,24 +1370,32 @@ async function handlePointGrant(event) {
     return;
   }
 
-  if (!Number.isFinite(amount) || amount <= 0) {
-    setMessage(adminMessage, "지급할 포인트를 1점 이상 숫자로 입력해주세요.");
+  if (!Number.isFinite(amount) || amount === 0) {
+    setMessage(adminMessage, "포인트를 숫자로 입력해주세요. 빼려면 -50처럼 입력하세요.");
     return;
   }
 
   try {
-    setMessage(adminMessage, "포인트를 지급하는 중입니다.");
-    await grantPoints(studentId, student, amount, reason);
+    setMessage(adminMessage, amount > 0 ? "포인트를 지급하는 중입니다." : "포인트를 차감하는 중입니다.");
+    const { applied, total } = await grantPoints(studentId, student, amount, reason);
     pointGrantForm.reset();
-    setMessage(adminMessage, `${student?.name ?? "학생"}에게 ${amount}P를 지급했습니다.`);
+    const name = student?.name ?? "학생";
+    setMessage(adminMessage, applied > 0
+      ? `${name}에게 ${applied}P를 지급했습니다. (현재 ${total}P)`
+      : `${name}에게서 ${-applied}P를 차감했습니다. (현재 ${total}P)`);
   } catch (error) {
     setMessage(adminMessage, error.message || "포인트를 지급하지 못했습니다.");
   }
 }
 
+// 음수면 차감한다. 포인트는 0 아래로 내려가지 않으므로 실제로 빠진 만큼만 기록한다.
 async function grantPoints(studentId, student, amount, reason) {
+  let applied = 0;
   const pointResult = await runTransaction(ref(db, `users/${studentId}/points`), (currentPoints) => {
-    return Number(currentPoints ?? 0) + amount;
+    const before = Number(currentPoints ?? 0);
+    const after = Math.max(0, before + amount);
+    applied = after - before;
+    return after;
   });
 
   if (!pointResult.committed) {
@@ -1396,14 +1405,16 @@ async function grantPoints(studentId, student, amount, reason) {
   const totalPoints = Number(pointResult.snapshot.val() ?? 0);
   await syncLeaderboardProfile(studentId, { ...student, points: totalPoints });
 
+  if (applied === 0) return { applied, total: totalPoints };
   await set(push(ref(db, "pointGrants")), {
     uid: studentId,
     studentName: student?.name ?? student?.email ?? "학생",
-    points: amount,
+    points: applied,
     reason,
     grantedBy: currentUser.uid,
     createdAt: serverTimestamp(),
   });
+  return { applied, total: totalPoints };
 }
 
 async function addMyPoints(amount) {

@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
     <link rel="stylesheet" href="styles.css?v=20261019-fix" />
-    <script type="module" src="app.js?v=20261019-fix"></script>
+    <script type="module" src="app.js?v=20261019-grant"></script>
   </head>
   <body>
     <main>
@@ -250,12 +250,12 @@
             <div id="admin-used-list" class="admin-list scroll-list"><p class="empty-text">사용 기록을 불러오고 있어요.</p></div>
           </article>
           <article class="card admin-card">
-            <h3>학생 포인트 지급</h3>
+            <h3>학생 포인트 지급·차감</h3>
             <form id="point-grant-form" class="stack-form">
               <label>학생 선택<select id="grant-student-id" required><option value="">학생을 불러오고 있어요</option></select></label>
-              <label>지급할 포인트<input id="grant-points" type="number" min="1" step="1" placeholder="예: 50" required /></label>
+              <label>포인트 (빼려면 앞에 -)<input id="grant-points" type="number" step="1" placeholder="예: 50 또는 -50" required /></label>
               <label>메모<input id="grant-reason" type="text" placeholder="예: 오류 보정, 특별 보상" /></label>
-              <button class="primary-button" type="submit">포인트 지급</button>
+              <button class="primary-button" type="submit">포인트 반영</button>
             </form>
           </article>
           <p id="admin-message" class="helper-text" role="status"></p>

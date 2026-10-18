@@ -41,7 +41,7 @@
     "pointGrants": {
       "$grantId": {
         ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') && !data.exists() && newData.child('uid').isString() && newData.child('points').isNumber() && newData.child('points').val() > 0"
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') && !data.exists() && newData.child('uid').isString() && newData.child('points').isNumber() && newData.child('points').val() != 0"
       }
     },
     "leaderboardUsers": {
