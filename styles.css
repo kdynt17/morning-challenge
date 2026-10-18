@@ -481,15 +481,6 @@ h3 {
 
 /* ── 홈 ── */
 
-.points-hero {
-  background: var(--ink);
-  color: #fff8ec;
-}
-
-.points-hero .card-label {
-  color: #c4cbe8;
-}
-
 .hero-figure {
   margin: 4px 0 12px;
   color: var(--lime);
@@ -1435,4 +1426,607 @@ body.is-teacher .header-points {
     margin-left: 50%;
     transform: translateX(-50%);
   }
+}
+
+/* ── 로그인 확인 중 화면 ── */
+
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(rgba(27, 37, 89, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(27, 37, 89, 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+  text-align: center;
+}
+
+.splash-screen h1 {
+  font-family: var(--display);
+  font-size: 48px;
+  font-weight: 400;
+}
+
+.splash-screen p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.splash-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.splash-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink);
+  animation: dot 0.9s ease-in-out infinite;
+}
+
+.splash-dots i:nth-child(2) { animation-delay: 0.15s; }
+.splash-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes dot {
+  50% {
+    transform: translateY(-6px);
+    background: var(--lime);
+  }
+}
+
+/* ── 두뇌 지수 카드 ── */
+
+.brain-hero {
+  background: var(--ink);
+  color: #fff8ec;
+}
+
+.brain-hero .card-label {
+  color: #c4cbe8;
+}
+
+.brain-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.level-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--butter);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.brain-figure {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 14px;
+}
+
+.brain-figure .hero-figure {
+  margin: 0;
+}
+
+.grade-badge {
+  padding: 6px 12px;
+  border: 2px solid var(--lime);
+  border-radius: 999px;
+  color: var(--lime);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.grade-badge[data-grade=""] {
+  border-style: dashed;
+  border-color: #6f78a6;
+  color: #c4cbe8;
+}
+
+.area-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.area-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 30px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.area-label {
+  color: #dfe3f5;
+}
+
+.area-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(198, 242, 78, 0.18);
+}
+
+.area-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--lime);
+  transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.area-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.xp-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.meter-xp {
+  height: 8px;
+  background: rgba(255, 216, 77, 0.2);
+}
+
+.meter-xp .meter-fill {
+  background: var(--butter);
+}
+
+.xp-text {
+  color: #c4cbe8;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.big-cta {
+  min-height: 60px;
+  font-size: 17px;
+}
+
+/* ── 게임 목록 ── */
+
+.game-card-calc {
+  background: var(--sky);
+}
+
+.game-card-stroop {
+  background: var(--coral-soft);
+}
+
+.game-card-memory {
+  background: var(--butter);
+}
+
+.game-card-best {
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.game-card-calc .game-card-icon,
+.game-card-memory .game-card-icon {
+  color: var(--ink);
+}
+
+/* ── 게임 화면 공통 ── */
+
+.game-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.back-button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 2px solid var(--stroke);
+  background: var(--paper);
+  font-size: 14px;
+}
+
+.area-tag {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--lime);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.help-button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--stroke);
+  background: var(--paper);
+}
+
+.help-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+.bt-stage {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  min-height: 360px;
+  padding: 16px;
+  border: 2px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.bt-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.bt-chip {
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--lime);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.bt-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: calc(var(--radius) - 2px);
+  background: rgba(255, 248, 236, 0.92);
+}
+
+.bt-countdown span {
+  font-family: var(--display);
+  font-size: 96px;
+  animation: count-pop 0.7s ease-out;
+}
+
+@keyframes count-pop {
+  from {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+.best-single {
+  margin: 6px 0 0;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.is-correct {
+  animation: good 0.3s ease-out;
+}
+
+.is-wrong {
+  animation: bad 0.35s ease-out;
+}
+
+@keyframes good {
+  50% {
+    transform: scale(1.04);
+    color: var(--green);
+  }
+}
+
+@keyframes bad {
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.mark-ok {
+  color: var(--green);
+  font-weight: 900;
+}
+
+.mark-bad {
+  color: var(--red);
+  font-weight: 900;
+}
+
+/* 계산 20 */
+
+.calc-track {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.calc-prev,
+.calc-next {
+  margin: 0;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-current {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 44px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-eq {
+  color: var(--muted);
+}
+
+.calc-answer {
+  min-width: 2.4ch;
+  min-height: 1.2em;
+  border-bottom: 4px solid var(--ink);
+  color: var(--blue);
+}
+
+.numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.numpad button {
+  min-height: 58px;
+  border: 2px solid var(--stroke);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  font-size: 24px;
+  touch-action: manipulation;
+}
+
+.numpad button:active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+.numpad .numpad-sub {
+  font-size: 16px;
+  background: var(--paper);
+}
+
+/* 색깔 판단 */
+
+.stroop-hint,
+.memory-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.stroop-word {
+  margin: 10px 0;
+  font-family: var(--display);
+  font-size: 72px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.stroop-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stroop-options button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 62px;
+  border: 2px solid var(--stroke);
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+  font-size: 18px;
+  touch-action: manipulation;
+}
+
+.stroop-options button:active {
+  transform: translateY(3px);
+  box-shadow: none;
+}
+
+.swatch {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--swatch);
+}
+
+/* 순간 기억 */
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  width: min(100%, 360px);
+  margin: 0 auto;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--ink);
+}
+
+.memory-cell {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  background: #2e3a72;
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 900;
+  touch-action: manipulation;
+}
+
+.memory-cell.is-shown,
+.memory-cell.is-done {
+  background: var(--paper);
+}
+
+.memory-cell.is-hidden {
+  background: var(--sky);
+}
+
+.memory-cell.is-done {
+  background: var(--lime);
+}
+
+.memory-cell.is-miss {
+  background: var(--coral);
+}
+
+.memory-cell.is-reveal {
+  background: var(--butter);
+}
+
+/* ── 지뢰 폭발 연출 ── */
+
+.ms-cell {
+  position: relative;
+}
+
+.ms-exploded {
+  z-index: 2;
+  animation: boom 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+.ms-exploded::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 3px solid var(--coral);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: shockwave 0.7s ease-out forwards;
+}
+
+@keyframes boom {
+  0% {
+    transform: scale(1);
+    background: #fff3a8;
+  }
+  35% {
+    transform: scale(1.7);
+    background: #ffd84d;
+    box-shadow: 0 0 0 6px rgba(255, 122, 89, 0.5);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shockwave {
+  from {
+    opacity: 1;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: scale(4);
+  }
+}
+
+.ms-shake {
+  animation: shake 0.45s ease-in-out;
+}
+
+@keyframes shake {
+  15% { transform: translate(-5px, 2px) rotate(-0.6deg); }
+  30% { transform: translate(5px, -2px) rotate(0.6deg); }
+  45% { transform: translate(-4px, 1px); }
+  60% { transform: translate(3px, -1px); }
+  80% { transform: translate(-1px, 0); }
+}
+
+.ms-pop {
+  animation: mine-pop 0.3s ease-out;
+}
+
+@keyframes mine-pop {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+}
+
+.ms-mine.ms-was-flagged {
+  background: var(--lime-soft);
+}
+
+/* ── 순위 탭(가로 스크롤) ── */
+
+.chip-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 -16px;
+  padding: 2px 16px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chip-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-tabs button {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 2px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 14px;
+}
+
+.chip-tabs button.active {
+  background: var(--ink);
+  color: var(--lime);
+}
+
+/* ── 설명서 그림 ── */
+
+.tutorial-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--paper);
+  font-size: 15px;
+  font-weight: 900;
+  white-space: nowrap;
 }

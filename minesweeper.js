@@ -24,6 +24,7 @@ export function createMinesweeper(root, callbacks = {}) {
   let longPressFired = false;
   let pressedIndex = null;
   let lastPointerType = "mouse";
+  let gameRunId = 0;
 
   root.classList.add("ms-board");
   root.addEventListener("contextmenu", (event) => {
@@ -52,6 +53,7 @@ export function createMinesweeper(root, callbacks = {}) {
   });
 
   function start(nextConfig) {
+    gameRunId += 1;
     config = { ...nextConfig };
     state = "ready";
     minesPlaced = false;
@@ -83,7 +85,7 @@ export function createMinesweeper(root, callbacks = {}) {
       return button;
     });
     root.append(fragment);
-    root.classList.remove("ms-won", "ms-lost");
+    root.classList.remove("ms-won", "ms-lost", "ms-shake");
     fitToWidth();
   }
 
@@ -240,19 +242,50 @@ export function createMinesweeper(root, callbacks = {}) {
     callbacks.onWin?.({ timeMs });
   }
 
+  // 밟은 지뢰가 먼저 터지고, 나머지 지뢰가 가까운 순서대로 드러난 뒤에 결과를 알린다.
   function lose(explodedIndex) {
     state = "lost";
-    cells.forEach((cell, i) => {
-      if (cell.mine) {
-        cell.revealed = true;
-        paint(i, i === explodedIndex);
-      } else if (cell.flagged) {
-        buttons[i].classList.add("ms-wrong-flag");
-      }
-    });
+    const runId = (gameRunId += 1);
+    const timeMs = Math.round(performance.now() - startTime);
+    cells[explodedIndex].revealed = true;
+    paint(explodedIndex, true);
     root.classList.add("ms-lost");
-    emitChange();
-    callbacks.onLose?.({ timeMs: Math.round(performance.now() - startTime) });
+    restartAnimation(root, "ms-shake");
+
+    const originRow = Math.floor(explodedIndex / config.cols);
+    const originCol = explodedIndex % config.cols;
+    const distance = (i) => Math.hypot(Math.floor(i / config.cols) - originRow, (i % config.cols) - originCol);
+    const others = cells
+      .map((_, i) => i)
+      .filter((i) => cells[i].mine && i !== explodedIndex)
+      .sort((a, b) => distance(a) - distance(b));
+    const step = others.length ? Math.min(70, 900 / others.length) : 0;
+    const revealStart = 450;
+
+    others.forEach((i, n) => {
+      setTimeout(() => {
+        if (runId !== gameRunId) return;
+        cells[i].revealed = true;
+        paint(i);
+        buttons[i].classList.add("ms-pop");
+      }, revealStart + n * step);
+    });
+
+    const doneAt = revealStart + others.length * step + 550;
+    setTimeout(() => {
+      if (runId !== gameRunId) return;
+      cells.forEach((cell, i) => {
+        if (cell.flagged && !cell.mine) buttons[i].classList.add("ms-wrong-flag");
+      });
+      emitChange();
+      callbacks.onLose?.({ timeMs });
+    }, doneAt);
+  }
+
+  function restartAnimation(element, className) {
+    element.classList.remove(className);
+    void element.offsetWidth;
+    element.classList.add(className);
   }
 
   function paint(index, exploded = false) {
@@ -264,6 +297,7 @@ export function createMinesweeper(root, callbacks = {}) {
     if (cell.revealed && cell.mine) {
       button.classList.add("ms-open", "ms-mine");
       if (exploded) button.classList.add("ms-exploded");
+      if (cell.flagged) button.classList.add("ms-was-flagged");
       button.innerHTML = MINE_SVG;
       button.setAttribute("aria-label", `${position}, 지뢰`);
     } else if (cell.revealed) {

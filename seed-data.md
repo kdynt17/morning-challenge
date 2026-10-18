@@ -44,3 +44,5 @@ Firebase Console → Realtime Database → Data 탭에서 만들 수 있습니�
 | `msBest/{uid}/{난이도}` | 역대 최고 기록 |
 | `gameStats/{uid}/{난이도}` | 플레이·성공 횟수 |
 | `monthlyRewards/{YYYY-MM}` | 월말 보상 지급 기록 (중복 지급 방지) |
+| `records/{YYYY-MM}/{calc·stroop·memory}/{uid}` | 두뇌 게임 이번 달 최고 기록 |
+| `brain/{uid}` | 영역별 최근 10판 점수, XP, 두뇌 지수(BQ) |

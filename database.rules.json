@@ -134,6 +134,31 @@
           }
         }
       }
+    },
+    "brain": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "bq"
+      ],
+      "$uid": {
+        ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved'))",
+        ".validate": "newData.hasChildren(['name', 'xp']) && newData.child('name').isString() && newData.child('xp').isNumber() && newData.child('xp').val() >= 0 && (!data.exists() || newData.child('xp').val() >= data.child('xp').val()) && (!newData.child('bq').exists() || (newData.child('bq').isNumber() && newData.child('bq').val() >= 70 && newData.child('bq').val() <= 160))"
+      }
+    },
+    "records": {
+      ".read": "auth != null",
+      "$month": {
+        ".validate": "$month.matches(/^[0-9]{4}-[0-9]{2}$/)",
+        "$game": {
+          ".indexOn": [
+            "value"
+          ],
+          "$uid": {
+            ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved'))",
+            ".validate": "newData.hasChildren(['name', 'value']) && newData.child('name').isString() && newData.child('value').isNumber() && (($game == 'calc' && newData.child('value').val() >= 12000 && (!data.exists() || newData.child('value').val() < data.child('value').val())) || ($game == 'stroop' && newData.child('value').val() >= 8000 && (!data.exists() || newData.child('value').val() < data.child('value').val())) || ($game == 'memory' && newData.child('value').val() >= 1 && newData.child('value').val() <= 25 && (!data.exists() || newData.child('value').val() > data.child('value').val())))"
+          }
+        }
+      }
     }
   }
 }
