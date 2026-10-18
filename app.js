@@ -169,6 +169,8 @@ let resultSecondary = null;
 let toastTimer = null;
 let sessionDay = null;
 let brainMount = null;
+// 선생님이 켜면 학생은 게임을 시작할 수 없다(settings/gamesLocked).
+let gamesLocked = false;
 
 if (setupRequired) {
   showSignedOut();
@@ -193,6 +195,7 @@ if (setupRequired) {
   $("#pending-logout-button").addEventListener("click", () => signOut(auth));
   productForm.addEventListener("submit", handleProductSave);
   pointGrantForm.addEventListener("submit", handlePointGrant);
+  $("#game-lock-toggle").addEventListener("click", handleGameLockToggle);
   buyProductButton.addEventListener("click", handlePurchase);
   attendanceButton.addEventListener("click", handleAttendance);
 
@@ -276,6 +279,7 @@ function enterApp(page = "home") {
   subscribeStore();
   subscribePurchaseHistory();
   subscribeAdminTools();
+  subscribeGameLock();
 }
 
 function waitForApproval() {
@@ -523,6 +527,7 @@ function showSignedOut() {
 
 function showPage(page, { push = true } = {}) {
   if (!pageNames[page]) page = "home";
+  if (GAME_PAGES.includes(page) && gamesLocked && !isTeacher(currentProfile, currentUser)) page = "games";
   const current = document.querySelector(".page.active-page")?.dataset.page;
   if (push && page !== current) history.pushState({ page }, "");
   // 두뇌교실 밖으로 나가면 진행 중인 게임 화면을 닫는다(오늘의 도전은 '이어서 하기'로 돌아올 수 있음).
@@ -560,7 +565,53 @@ function mountAcademy() {
     root.innerHTML = `<p class="empty-text">두뇌교실 게임은 학생 계정으로 참여해요.</p>`;
     return;
   }
+  if (gamesLocked) {
+    root.innerHTML = `<p class="empty-text">지금은 선생님이 게임을 잠가 두었어요. 잠금이 풀리면 다시 할 수 있어요.</p>`;
+    return;
+  }
   brainMount = mountBrain({ db, user: currentUser, root, onClassic: (key) => showPage(key) });
+}
+
+// ── 게임 잠금 (선생님이 켜고 끔) ───────────────────────────
+
+function subscribeGameLock() {
+  const unsubscribe = onValue(ref(db, "settings/gamesLocked"), (snapshot) => {
+    const locked = snapshot.val() === true;
+    const changed = locked !== gamesLocked;
+    gamesLocked = locked;
+    renderGameLockAdmin();
+    if (!changed || isTeacher(currentProfile, currentUser)) return;
+    if (locked) {
+      brainMount?.exit?.();
+      Object.entries(brainGames).forEach(([key, instance]) => {
+        instance.stop();
+        $(`#${key}-start`).hidden = false;
+      });
+      const current = document.querySelector(".page.active-page")?.dataset.page;
+      if (GAME_PAGES.includes(current)) showPage("games", { push: false });
+      showToast("선생님이 게임을 잠갔어요.");
+    }
+    mountAcademy();
+  }, () => {});
+  unsubscribers.push(unsubscribe);
+}
+
+function renderGameLockAdmin() {
+  const button = $("#game-lock-toggle");
+  if (!button) return;
+  $("#game-lock-status").textContent = gamesLocked
+    ? "지금 학생들은 게임을 할 수 없어요."
+    : "지금 학생들은 게임을 할 수 있어요.";
+  button.textContent = gamesLocked ? "게임 잠금 풀기" : "게임 잠그기";
+}
+
+async function handleGameLockToggle() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  try {
+    await set(ref(db, "settings/gamesLocked"), !gamesLocked);
+  } catch (error) {
+    setMessage(adminMessage, authErrorMessage(error.code));
+  }
 }
 
 // ── 출석 체크 (월~금, 로그인하면 자동) ──────────────────────
@@ -767,6 +818,10 @@ function setupBrainGames() {
 }
 
 async function startBrainGame(key) {
+  if (gamesLocked && !isTeacher(currentProfile, currentUser)) {
+    showToast("지금은 선생님이 게임을 잠가 두었어요.");
+    return;
+  }
   try {
     const end=academyEnd(academyDay(serverNow()));
     if(!(await get(ref(db,`academy/sessions/${currentUser.uid}/${end}/done`))).val()) {showToast('오늘 5영역 도전을 먼저 완료해주세요.');return;}

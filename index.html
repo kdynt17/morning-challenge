@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
     <link rel="stylesheet" href="styles.css?v=20261019-fix" />
-    <script type="module" src="app.js?v=20261019-grant"></script>
+    <script type="module" src="app.js?v=20261019-lock"></script>
   </head>
   <body>
     <main>
@@ -223,6 +223,11 @@
         <!-- 선생님 관리 -->
         <section id="admin-page" class="page" data-page="admin">
           <a class="secondary-button link-button" href="developer/">가입자 승인 · 관리 페이지 열기</a>
+          <article class="card admin-card">
+            <h3>게임 잠금</h3>
+            <p id="game-lock-status" class="helper-text no-margin">불러오고 있어요.</p>
+            <button id="game-lock-toggle" class="primary-button" type="button">게임 잠그기</button>
+          </article>
           <article class="card admin-card">
             <h3>오늘 출석</h3>
             <p id="admin-attendance-summary" class="helper-text no-margin">불러오고 있어요.</p>
