@@ -55,6 +55,19 @@ try{
   await shot('mobile-result');
   await page.locator('#brain-result-close').click();await page.locator('[data-practice]:not(:disabled)').first().waitFor();
   await shot('mobile-dashboard');
+  assert.equal(await page.locator('[data-practice]').count(),13);
+  // 나가기 버튼과 브라우저 뒤로 가기는 연습을 닫고, 다른 게임을 누르면 예전 연습이 아니라 새 게임이 열린다.
+  await page.locator('[data-practice="mole"]').click();await page.locator('#brain-back').waitFor();
+  assert.equal(await page.locator('.brain-game h2').textContent(),'그림두더지');
+  assert.equal(await page.locator('#brain-time').textContent(),'30');
+  await page.locator('#brain-back').click();await page.locator('[data-practice="view"]:not(:disabled)').waitFor();
+  await page.locator('[data-practice="view"]').click();await page.locator('#brain-back').waitFor();
+  assert.equal(await page.locator('.brain-game h2').textContent(),'시점추측');
+  await page.goBack();await page.locator('[data-practice="rail"]:not(:disabled)').waitFor();
+  await page.locator('[data-practice="rail"]').click();await page.locator('#brain-back').waitFor();
+  assert.equal(await page.locator('.brain-game h2').textContent(),'선로잇기');
+  await page.locator('#brain-back').click();await page.locator('[data-practice]:not(:disabled)').first().waitFor();
+  assert.equal(state.users.tester.points,0);
   for(const game of GAMES){
     await page.locator(`[data-practice="${game.id}"]`).click();await page.locator('#brain-time').waitFor();await page.clock.fastForward(10000);
     assert.ok(await page.locator('[data-answer]').count()>0);
@@ -63,5 +76,5 @@ try{
     await page.clock.fastForward(61000);await page.locator('[data-practice]:not(:disabled)').first().waitFor();
   }
   assert.equal(state.users.tester.points,50);
-  assert.deepEqual(errors,[]);console.log('PASS: five daily rounds, all 13 practice games, mobile layout, 50P daily cap, no browser errors.');
+  assert.deepEqual(errors,[]);console.log('PASS: five daily rounds, back button/browser back closes practice, new practice replaces old, all 13 practice games, mobile layout, 50P daily cap, no browser errors.');
 }finally{await browser.close();server.close();}

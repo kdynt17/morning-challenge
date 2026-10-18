@@ -29,11 +29,12 @@ test('daily brain uses the five stage results in category order', () => {
 });
 
 test('profile needs all five areas and averages recent records', () => {
-  const partial = profileBrain({ 0: [3200], 1: [600] });
+  const partial = profileBrain({ 0: [AREA_REFERENCE[0]], 1: [AREA_REFERENCE[1] / 2] });
   assert.equal(partial.grams, null);
   assert.equal(partial.measured, 2);
   assert.deepEqual(partial.areas.slice(0, 2), [100, 50]);
-  const full = profileBrain({ 0: [1600, 1600], 1: { a: 600 }, 2: [750], 3: [700], 4: [800] });
+  const half = AREA_REFERENCE.map((ref) => ref / 2);
+  const full = profileBrain({ 0: [half[0], half[0]], 1: { a: half[1] }, 2: [half[2]], 3: [half[3]], 4: [half[4]] });
   assert.deepEqual(full.areas, [50, 50, 50, 50, 50]);
   assert.equal(full.grams, 1200);
   assert.equal(full.grade.name, '탱글 두뇌');
@@ -44,4 +45,30 @@ test('radar points start at the top and go clockwise', () => {
   assert.ok(Math.abs(x0 - 50) < 1e-9 && Math.abs(y0 - 40) < 1e-9);
   assert.ok(x1 > 50);
   assert.equal(AREAS.length, 5);
+});
+
+test('daily reward starts at 100P and drops 5P per rank down to 20P', async () => {
+  const { dailyReward } = await import('../academy/functions/domain.mjs');
+  assert.equal(dailyReward(1), 100);
+  assert.equal(dailyReward(2), 95);
+  assert.equal(dailyReward(16), 25);
+  assert.equal(dailyReward(17), 20);
+  assert.equal(dailyReward(30), 20);
+  assert.equal(dailyReward(undefined), 20);
+});
+
+test('every generated question stays answerable at every difficulty level', async () => {
+  const { GAMES, question, isCorrect, scoreRound, roundMs } = await import('../academy/functions/domain.mjs');
+  for (const game of GAMES) {
+    assert.ok(roundMs(game.id) >= 30000 && roundMs(game.id) <= 45000, game.id);
+    for (let i = 0; i < 40; i++) {
+      const q = question(game.id, `seed-${i}`, i);
+      assert.ok(isCorrect(q, q.answer), `${game.id} #${i}`);
+    }
+    const events = [], seed = 's';
+    let at = 0;
+    for (let i = 0; i < 5; i++) { const q = question(game.id, seed, i); at += Math.max(180, q.preview) + 1; events.push({ at, selected: q.answer }); }
+    assert.equal(scoreRound(game.id, seed, events).correct, 5);
+    assert.throws(() => scoreRound(game.id, seed, [{ at: roundMs(game.id) + 1, selected: [0] }]));
+  }
 });

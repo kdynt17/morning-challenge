@@ -1,17 +1,21 @@
 // 말랑그램(두뇌 무게)·영역 능력치·박사 코멘트 계산. 화면과 Firebase에 의존하지 않는 순수 함수만 둔다.
 
+// 메인 화면(루트)과 두뇌교실 어디서 불러도 그림 경로가 맞도록 이 파일 위치 기준으로 만든다.
+export const asset = (name) => new URL(`./assets/${name}`, import.meta.url).href;
+
 export const AREAS = [
-  { key: 'intuition', label: '직감', color: '#ff7a45', icon: 'assets/cat-intuition.webp' },
-  { key: 'memory', label: '기억', color: '#f2b51c', icon: 'assets/cat-memory.webp' },
-  { key: 'analysis', label: '분석', color: '#3d9bf0', icon: 'assets/cat-analysis.webp' },
-  { key: 'compute', label: '계산', color: '#4cb963', icon: 'assets/cat-compute.webp' },
-  { key: 'perception', label: '지각', color: '#9b6bea', icon: 'assets/cat-perception.webp' },
+  { key: 'intuition', label: '직감', color: '#ff7a45', icon: asset('cat-intuition.webp') },
+  { key: 'memory', label: '기억', color: '#f2b51c', icon: asset('cat-memory.webp') },
+  { key: 'analysis', label: '분석', color: '#3d9bf0', icon: asset('cat-analysis.webp') },
+  { key: 'compute', label: '계산', color: '#4cb963', icon: asset('cat-compute.webp') },
+  { key: 'perception', label: '지각', color: '#9b6bea', icon: asset('cat-perception.webp') },
 ];
 
-// 60초 한 판에서 "꽤 잘했다"고 볼 점수. 이 점수면 그 영역 능력치 100.
-// 문제 하나 맞히면 100점(+콤보 최대 50점)이라, 직감처럼 빨리 넘기는 게임이 기준이 높다.
+// 한 판에서 이 점수를 내면 그 영역 능력치가 100(오각형 끝까지 꽉 참)이다.
+// 정답 하나에 100점, 연속 정답이면 최대 150점. 실수 거의 없이 아주 빠르게 풀어야 닿는 점수로 잡았다.
+// 직감 30초에 정답 약 22개 · 기억 45초에 약 9개 · 분석 약 13개 · 계산 약 9개 · 지각 약 13개.
 // 학생 기록이 쌓이면 이 값만 조정하면 된다.
-export const AREA_REFERENCE = [3200, 1200, 1500, 1400, 1600];
+export const AREA_REFERENCE = [3000, 1300, 1800, 1300, 1800];
 
 const MIN_GRAMS = 400;
 const GRAMS_PER_POINT = 3.2; // 다섯 영역이 모두 100이면 400 + 500×3.2 = 2000g

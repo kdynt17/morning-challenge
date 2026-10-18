@@ -1,12 +1,14 @@
 // 13개 게임의 문제 화면 그리기. 그림 파일은 그림두더지 동물만 쓰고, 나머지는 코드로 그린 SVG다.
 // 모든 함수는 HTML 문자열을 돌려주며, 정답 버튼에는 data-answer 를 붙인다.
 
+import { asset } from './brain-score.js';
+
 const INK = '#3b2f25';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // domain.mjs 의 그림두더지 이모지를 저장소 그림으로 바꿔 보여준다(문제 생성 규칙은 그대로).
 const ANIMALS = { '🐱': 'cat', '🐶': 'dog', '🐼': 'panda', '🐸': 'frog', '🐙': 'pig', '🦊': 'chick', '🐰': 'rabbit', '🐵': 'monkey', '🐨': 'koala' };
-const animal = (emoji, size = 72) => `<img class="animal" src="assets/animal-${ANIMALS[emoji] ?? 'bear'}.webp" width="${size}" height="${size}" alt="${ANIMALS[emoji] ?? '동물'}" draggable="false" />`;
+const animal = (emoji, size = 72) => `<img class="animal" src="${asset(`animal-${ANIMALS[emoji] ?? 'bear'}.webp`)}" width="${size}" height="${size}" alt="${ANIMALS[emoji] ?? '동물'}" draggable="false" />`;
 
 const ARROW_ANGLE = { '→': 0, '↓': 90, '←': 180, '↑': 270 };
 const ARROW_NAME = { '→': '오른쪽', '↓': '아래', '←': '왼쪽', '↑': '위' };

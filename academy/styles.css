@@ -1823,3 +1823,18 @@ img {
   min-width: 60px;
   min-height: 78px;
 }
+
+/* 게임 화면 나가기 버튼 */
+.brain-game .back-btn { display: inline-flex; width: auto; min-height: 0; margin: 10px 0 8px 12px; padding: 6px 14px; }
+
+/* 오각형 기준표 · 등급표 */
+.criteria { margin-top: 10px; background: var(--cream); border: 3px solid var(--ink); border-radius: 16px; padding: 10px 14px; text-align: left; }
+.criteria summary { font-family: "Jua", sans-serif; font-size: 1.05rem; cursor: pointer; }
+.criteria p { margin: 8px 0; font-size: .92rem; line-height: 1.5; }
+.criteria-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.criteria-table th, .criteria-table td { padding: 5px 4px; border-bottom: 2px dashed var(--board); text-align: center; }
+.criteria-table th { font-family: "Jua", sans-serif; font-weight: 400; }
+.grade-ladder { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.grade-ladder li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 10px; border-radius: 10px; background: #fff; border: 2px solid var(--board); font-size: .9rem; }
+.grade-ladder li.is-now { background: var(--yellow); border-color: var(--ink); }
+.next-grade { font-family: "Jua", sans-serif; }

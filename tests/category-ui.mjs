@@ -36,12 +36,25 @@ try{
   await page.goto(base+'/');await page.locator('#app-shell:not([hidden])').waitFor();
   assert.equal(await page.locator('#header-points-value').textContent(),'200');
   assert.equal(await page.locator('#mines-page,[data-target-page="mines"],[data-rank-tab="beginner"]').count(),0);
-  assert.equal(await page.locator('#area-bars .area-row').count(),5);
-  await page.locator('a[href="academy/"]').first().click();
-  await page.locator('a[href="../?game=calc"]').waitFor();
-  assert.equal(await page.locator('a[href^="../?game="]').count(),3);
-  await page.locator('a[href="../?game=calc"]').click();
+  // 홈에 두뇌 무게 오각형, 순위는 포인트만, 주말(일요일 21시 KST)에는 자동 출석하지 않음
+  assert.equal(await page.locator('#brain-summary .radar').count(),1);
+  assert.equal(await page.locator('#brain-summary .criteria').count(),1);
+  assert.equal(await page.locator('[data-rank-tab]').count(),0);
+  assert.match(await page.locator('#attendance-title').textContent(),/주말/);
+  // 두뇌교실은 같은 화면 안에서 열리고, 원래 3게임도 일반 연습처럼 보인다
+  await page.locator('.big-cta').click();
+  await page.locator('#games-page.active-page [data-classic="calc"]:not(:disabled)').waitFor();
+  assert.equal(await page.locator('[data-classic]').count(),3);
+  assert.equal(await page.getByText('추가 연습').count(),0);
+  assert.equal(page.url().includes('academy/'),false);
+  await page.locator('[data-classic="calc"]').click();
+  await page.locator('#calc-page.active-page').waitFor();
+  // 브라우저 뒤로 가기로 두뇌교실에 돌아온다
   await page.locator('#tutorial-close').click();
+  await page.goBack();
+  await page.locator('#games-page.active-page').waitFor();
+  await page.goForward();
+  await page.locator('#calc-page.active-page').waitFor();
   await page.locator('#calc-start').click();
   await page.waitForFunction(()=>document.querySelector('.countdown-overlay')||document.querySelector('#calc-start').hidden);
   for(let i=0;i<5;i++)await page.clock.runFor(1000);
@@ -61,5 +74,5 @@ try{
     assert.equal(await page.locator('#'+key+'-page').evaluate(el=>el.classList.contains('active-page')),true);
   }
   assert.deepEqual(errors,[]);
-  console.log('PASS: original home, 5 categories, no mines, 3 category links, full calc20 completion +10P, result buttons, native game entry, no browser errors.');
+  console.log('PASS: home radar, points-only ranking, weekend attendance, in-app academy with 3 classic games, browser back/forward, full calc20 completion +10P, no browser errors.');
 }finally{await browser.close();server.close();}

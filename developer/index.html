@@ -7,9 +7,9 @@
     <title>가입자 관리</title>
     <meta http-equiv="Cache-Control" content="no-store" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
-    <link rel="stylesheet" href="../styles.css?v=20261019-unified" />
-    <link rel="stylesheet" href="developer.css?v=20261019-unified" />
-    <script type="module" src="developer.js?v=20261019-unified"></script>
+    <link rel="stylesheet" href="../styles.css?v=20261019-fix" />
+    <link rel="stylesheet" href="developer.css?v=20261019-fix" />
+    <script type="module" src="developer.js?v=20261019-fix"></script>
   </head>
   <body>
     <main>
@@ -21,7 +21,7 @@
         </div>
         <section class="auth-card" aria-label="로그인">
           <form id="dev-login-form" class="stack-form">
-            <label>이메일<input id="dev-login-email" type="text" autocomplete="username" required /></label>
+            <label>이메일<input id="dev-login-email" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required /></label>
             <label>비밀번호<input id="dev-login-password" type="password" autocomplete="current-password" required /></label>
             <button class="primary-button" type="submit">들어가기</button>
           </form>

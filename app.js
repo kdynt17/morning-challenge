@@ -1,6 +1,6 @@
 import {freeClient} from './academy/free-client.js';
 import {dayKey as academyDay,closesAt as academyEnd} from './academy/functions/domain.mjs';
-import {profileBrain,AREAS as ACADEMY_AREAS} from './academy/brain-score.js';
+import {mountBrain,brainSummary} from './academy/brain.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -48,7 +48,8 @@ const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 
 // ── 포인트 설계 ─────────────────────────────────────────────
-// 출석10P + 5영역 도전50P + 영역별 연습10P(최대50P). 출석은 자정, 게임은 오전6시 기준.
+// 출석10P(월~금, 로그인하면 자동) + 5영역 도전 순위보상(1등100P~최소20P) + 영역별 연습10P(최대50P).
+// 출석은 자정, 게임은 오전6시 기준.
 const ATTENDANCE_POINTS = 10;
 const STREAK_BONUS_EVERY = 7;
 const STREAK_BONUS_POINTS = 30;
@@ -137,7 +138,7 @@ const resultDialog = $("#result-dialog");
 const GAME_PAGES = ["calc", "stroop", "memory"];
 const pageNames = {
   home: "홈",
-  games: "두뇌 트레이닝",
+  games: "두뇌교실",
   calc: "계산 20",
   stroop: "색깔 판단",
   memory: "순간 기억",
@@ -158,7 +159,6 @@ let rankUnsubscribe = null;
 let serverOffsetMs = 0;
 let attendance = null;
 let gameDaily = null;
-let currentRankTab = "points";
 let tutorialsShownThisSession = new Set();
 let tutorialGame = null;
 let brainGames = {};
@@ -168,6 +168,7 @@ let resultAgain = null;
 let resultSecondary = null;
 let toastTimer = null;
 let sessionDay = null;
+let brainMount = null;
 
 if (setupRequired) {
   showSignedOut();
@@ -198,8 +199,11 @@ if (setupRequired) {
   document.querySelectorAll("[data-target-page]").forEach((button) => {
     button.addEventListener("click", () => showPage(button.dataset.targetPage));
   });
-  document.querySelectorAll("[data-rank-tab]").forEach((button) => {
-    button.addEventListener("click", () => selectRankTab(button.dataset.rankTab));
+  // 휴대폰·브라우저 뒤로 가기: 앱 안의 이전 화면으로 돌아간다(두뇌교실 게임은 brain.js가 따로 닫는다).
+  window.addEventListener("popstate", (event) => {
+    if (!document.body.classList.contains("is-authenticated")) return;
+    const page = event.state?.page ?? "home";
+    showPage(pageNames[page] ? page : "home", { push: false });
   });
 
   $("#result-again").addEventListener("click",()=>{resultDialog.close();resultAgain?.();});
@@ -232,7 +236,18 @@ if (setupRequired) {
       return;
     }
 
-    currentProfile = await ensureProfile(user);
+    try {
+      currentProfile = await ensureProfile(user);
+    } catch (error) {
+      // 프로필을 못 읽거나 못 만들면(규칙 미배포·네트워크) 로딩 화면에 멈추지 않고 이유를 보여준다.
+      console.error(error);
+      showSignedOut();
+      setMessage(authMessage, user.email === ADMIN_AUTH_EMAIL
+        ? "관리자 계정 정보를 저장하지 못했어요. Firebase 콘솔에서 이 저장소의 database.rules.json이 게시됐는지 확인해 주세요."
+        : "계정 정보를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 로그인해 주세요.");
+      void signOut(auth);
+      return;
+    }
     if (!isApproved(currentProfile, user)) {
       waitForApproval();
       return;
@@ -241,7 +256,7 @@ if (setupRequired) {
     const params = new URLSearchParams(location.search);
     const requested = params.get("game");
     const requestedPage = params.get("page");
-    enterApp(GAME_PAGES.includes(requested) ? requested : ["leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
+    enterApp(GAME_PAGES.includes(requested) ? requested : ["games", "leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
   });
 }
 
@@ -249,13 +264,15 @@ function enterApp(page = "home") {
   sessionDay = kstDay(serverNow());
   showSignedIn();
   renderProfile(currentUser, currentProfile);
-  showPage(page);
+  history.replaceState({ page }, "", location.pathname);
+  showPage(page, { push: false });
   subscribeProfile();
   subscribeAttendance();
+  mountAcademy();
   subscribeGameDaily();
   subscribeMyBests();
   subscribeBrain();
-  selectRankTab(currentRankTab);
+  subscribePointsLeaderboard();
   subscribeStore();
   subscribePurchaseHistory();
   subscribeAdminTools();
@@ -504,8 +521,12 @@ function showSignedOut() {
   }
 }
 
-function showPage(page) {
-  if(page === "games" || page === "mines") { location.href="academy/"; return; }
+function showPage(page, { push = true } = {}) {
+  if (!pageNames[page]) page = "home";
+  const current = document.querySelector(".page.active-page")?.dataset.page;
+  if (push && page !== current) history.pushState({ page }, "");
+  // 두뇌교실 밖으로 나가면 진행 중인 게임 화면을 닫는다(오늘의 도전은 '이어서 하기'로 돌아올 수 있음).
+  if (page !== "games") brainMount?.exit?.();
   document.querySelectorAll(".page").forEach((section) => {
     section.classList.toggle("active-page", section.dataset.page === page);
   });
@@ -529,21 +550,59 @@ function showPage(page) {
   if (GAME_PAGES.includes(page)) maybeShowTutorial(page);
 }
 
-// ── 출석 체크 ───────────────────────────────────────────────
+// ── 두뇌교실 (같은 화면 안에서 연다) ─────────────────────────
+
+function mountAcademy() {
+  const root = $("#brain-root");
+  brainMount?.();
+  brainMount = null;
+  if (isTeacher(currentProfile, currentUser)) {
+    root.innerHTML = `<p class="empty-text">두뇌교실 게임은 학생 계정으로 참여해요.</p>`;
+    return;
+  }
+  brainMount = mountBrain({ db, user: currentUser, root, onClassic: (key) => showPage(key) });
+}
+
+// ── 출석 체크 (월~금, 로그인하면 자동) ──────────────────────
 
 function subscribeAttendance() {
+  let firstLoad = true;
   const unsubscribe = onValue(ref(db, `attendance/${currentUser.uid}`), (snapshot) => {
     attendance = snapshot.exists() ? snapshot.val() : null;
     renderAttendance();
+    // 로그인해서 들어오면 평일에는 바로 출석 처리한다.
+    if (firstLoad) {
+      firstLoad = false;
+      void handleAttendance();
+    }
   });
   unsubscribers.push(unsubscribe);
+}
+
+// 날짜 번호의 요일(0=일요일). 1970-01-01이 목요일이라 4를 더한다. DB 규칙도 같은 식을 쓴다.
+function weekdayOf(day) {
+  return (day + 4) % 7;
+}
+
+function isSchoolDay(day) {
+  const weekday = weekdayOf(day);
+  return weekday >= 1 && weekday <= 5;
+}
+
+// 바로 전 평일(월요일이면 금요일). 연속 출석은 주말을 건너뛰고 이어진다.
+function previousSchoolDay(day) {
+  let previous = day - 1;
+  while (!isSchoolDay(previous)) previous -= 1;
+  return previous;
 }
 
 function renderAttendance() {
   if (!currentUser) return;
   const today = kstDay(serverNow());
+  const schoolDay = isSchoolDay(today);
   const checkedToday = attendance?.day === today;
-  const alive = attendance && (attendance.day === today || attendance.day === today - 1);
+  const lastSchoolDay = schoolDay ? previousSchoolDay(today) : previousSchoolDay(today + 1);
+  const alive = attendance && (attendance.day === today || attendance.day === lastSchoolDay);
   const streak = alive ? Number(attendance.streak ?? 0) : 0;
   const teacher = isTeacher(currentProfile, currentUser);
 
@@ -551,11 +610,11 @@ function renderAttendance() {
   $("#attendance-total").textContent = `누적 ${Number(attendance?.total ?? 0)}일`;
   $("#attendance-title").textContent = teacher
     ? "선생님은 출석 체크를 하지 않아요"
-    : checkedToday
-      ? `출석 완료! ${streak}일 연속`
-      : streak
-        ? `${streak}일 연속 중 · 오늘도 이어가요`
-        : "오늘 아직 출석 전이에요";
+    : !schoolDay
+      ? "주말은 출석 쉬는 날이에요"
+      : checkedToday
+        ? `출석 완료! ${streak}일 연속`
+        : "출석 체크하는 중…";
 
   const inCycle = streak === 0 ? 0 : ((streak - 1) % STREAK_BONUS_EVERY) + 1;
   $("#streak-dots").innerHTML = Array.from({ length: STREAK_BONUS_EVERY }, (_, i) => {
@@ -564,25 +623,34 @@ function renderAttendance() {
     return `<span class="streak-dot${filled ? " filled" : ""}${bonus ? " bonus" : ""}">${bonus ? "+30" : i + 1}</span>`;
   }).join("");
 
-  attendanceButton.disabled = teacher || checkedToday;
-  const willBonus = (streak + (checkedToday ? 0 : 1)) % STREAK_BONUS_EVERY === 0;
-  attendanceButton.textContent = checkedToday
-    ? "내일 또 만나요"
-    : `출석하기 +${ATTENDANCE_POINTS + (willBonus ? STREAK_BONUS_POINTS : 0)}P`;
-  attendanceButton.classList.toggle("is-done", checkedToday);
+  // 출석은 들어오면 자동으로 된다. 버튼은 자동 출석이 실패했을 때 다시 시도하는 용도로만 보인다.
+  attendanceButton.hidden = teacher || !schoolDay || checkedToday || !attendanceFailed;
+  attendanceButton.disabled = attendanceBusy;
+  attendanceButton.textContent = "출석 다시 시도";
 }
 
-async function handleAttendance() {
-  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
-  const today = kstDay(serverNow());
-  if (attendance?.day === today) return;
+let attendanceBusy = false;
+let attendanceFailed = false;
 
-  attendanceButton.disabled = true;
+async function handleAttendance() {
+  if (!currentUser || isTeacher(currentProfile, currentUser) || attendanceBusy) return;
+  const today = kstDay(serverNow());
+  if (!isSchoolDay(today) || attendance?.day === today) return;
+  attendanceBusy = true;
+  try {
+    await checkIn(today);
+  } finally {
+    attendanceBusy = false;
+    renderAttendance();
+  }
+}
+
+async function checkIn(today) {
   let streak;
   try {
     const latest = (await get(ref(db, `attendance/${currentUser.uid}`))).val();
     if (latest?.day === today) return;
-    streak = latest && latest.day === today - 1 ? Number(latest.streak ?? 0) + 1 : 1;
+    streak = latest && latest.day >= previousSchoolDay(today) ? Number(latest.streak ?? 0) + 1 : 1;
     const total = Number(latest?.total ?? 0) + 1;
     // 출석 기록 세 곳을 한 번에 저장한다(하나라도 실패하면 모두 저장되지 않음).
     await update(ref(db), {
@@ -591,10 +659,13 @@ async function handleAttendance() {
       [`users/${currentUser.uid}/todayResult`]: `${streak}일 연속 출석`,
     });
   } catch (error) {
-    attendanceButton.disabled = false;
-    showToast("출석 체크에 실패했어요. 잠시 후 다시 눌러 주세요.");
+    attendanceFailed = true;
+    showToast("자동 출석에 실패했어요. 출석 카드의 버튼을 눌러 다시 시도해 주세요.");
     return;
   }
+  attendanceFailed = false;
+  attendance = { day: today, streak, total: Number(attendance?.total ?? 0) + 1 };
+  renderAttendance();
 
   // 출석은 이미 기록됐으므로, 포인트 반영은 실패해도 몇 번 더 시도한다.
   const bonus = streak % STREAK_BONUS_EVERY === 0 ? STREAK_BONUS_POINTS : 0;
@@ -724,11 +795,8 @@ async function handleBrainFinish(key, result) {
     time: valueText,
     detail: canSaveGame() ? `${detailBase} · 저장하는 중…` : `${detailBase} · 선생님 계정은 저장되지 않아요.`,
     again: () => startBrainGame(key),
-    secondaryLabel: "순위 보기",
-    secondary: () => {
-      selectRankTab(key);
-      showPage("leaderboard");
-    },
+    secondaryLabel: "두뇌교실로",
+    secondary: () => showPage("games"),
   });
   if (!canSaveGame()) return;
 
@@ -793,48 +861,17 @@ function subscribeBrain() {
   renderBrain();
 }
 
+// 홈의 두뇌 무게 카드: 두뇌교실과 같은 말랑그램 + 오각형 + 기준표.
 function renderBrain() {
-  const p=profileBrain(brainData||{});
-  $('#brain-bq').textContent=p.grams===null?'?':p.grams+'g';
-  $('#brain-grade').textContent=p.grade?.name||'측정 '+p.measured+'/5';
-  $('#brain-caption').textContent='5영역 최근 7회 평균 · 재미로 보는 말랑그램';
-  $('#area-bars').innerHTML=ACADEMY_AREAS.map((a,i)=>`<div class="area-row"><span class="area-label">${a.label}</span><span class="area-track"><span class="area-fill" style="width:${p.areas[i]??0}%"></span></span><span class="area-value">${p.areas[i]??'-'}</span></div>`).join('');
-}
-
-function selectRankTab(tab) {
-  if(tab!=='points'&&!BRAIN_GAMES[tab])tab='points';
-  currentRankTab=tab;
-  document.querySelectorAll('[data-rank-tab]').forEach(b=>b.classList.toggle('active',b.dataset.rankTab===tab));
-  rankUnsubscribe?.();rankUnsubscribe=null;
-  if(!currentUser)return;
-  if(tab==='points'){rankCaption.textContent='현재 포인트 순위';subscribePointsLeaderboard();}
-  else{rankCaption.textContent=BRAIN_GAMES[tab].label+' 월별 추가 연습 기록';subscribeGameLeaderboard(tab,kstMonthKey(serverNow()));}
-}
-
-function subscribeGameLeaderboard(key, month) {
-  const lowerIsBetter = BRAIN_GAMES[key].lowerIsBetter;
-  const recordsQuery = query(ref(db, `records/${month}/${key}`), orderByChild("value"), lowerIsBetter ? limitToFirst(30) : limitToLast(30));
-  rankUnsubscribe = onValue(recordsQuery, (snapshot) => {
-    const rows = [];
-    snapshot.forEach((child) => {
-      rows.push({ uid: child.key, ...child.val() });
-    });
-    rows.sort((a, b) => (lowerIsBetter ? a.value - b.value : b.value - a.value));
-    leaderboardList.innerHTML = rows.length
-      ? rows.map((row, index) => renderRankItem({
-          index,
-          name: row.name,
-          meta: `${row.wrong ? `틀림 ${row.wrong} · ` : ""}${formatDateTime(row.at)}`,
-          value: formatGameValue(key, row.value),
-          mine: row.uid === currentUser?.uid,
-        })).join("")
-      : `<p class="empty-text">이번 달 첫 기록의 주인공이 되어 보세요!</p>`;
-  }, () => {
-    leaderboardList.innerHTML = `<p class="empty-text">순위를 불러오지 못했어요. 데이터베이스 규칙을 확인해 주세요.</p>`;
-  });
+  const details = $("#brain-summary details");
+  const open = details?.open ?? false;
+  $("#brain-summary").innerHTML = brainSummary(brainData || {});
+  if (open) $("#brain-summary details").open = true;
 }
 
 function subscribePointsLeaderboard() {
+  rankUnsubscribe?.();
+  rankCaption.textContent = "현재 포인트 순위";
   const studentsQuery = query(ref(db, "leaderboardUsers"), orderByChild("points"), limitToLast(40));
 
   rankUnsubscribe = onValue(studentsQuery, async (snapshot) => {
@@ -868,7 +905,6 @@ function subscribePointsLeaderboard() {
       })());
     });
     await Promise.all(studentChecks);
-    if (currentRankTab !== "points") return;
     students.sort((a, b) => b.points - a.points);
 
     leaderboardList.innerHTML = students.length
@@ -1450,8 +1486,12 @@ function isApproved(profile, user) {
   return !profile?.status || profile.status === "approved";
 }
 
+// 휴대폰 자판이 첫 글자를 대문자로 바꾸거나 공백이 붙어도 관리자 아이디로 알아본다.
 function normalizeLoginEmail(value) {
-  return value === ADMIN_LOGIN ? ADMIN_AUTH_EMAIL : value;
+  const login = String(value ?? "").trim();
+  const lower = login.toLowerCase();
+  if (lower === ADMIN_LOGIN || lower === "admin" || lower === ADMIN_AUTH_EMAIL) return ADMIN_AUTH_EMAIL;
+  return login;
 }
 
 function serverNow() {
@@ -1516,7 +1556,9 @@ function getTimestampValue(timestamp) {
 function authErrorMessage(code) {
   if (code === "auth/email-already-in-use") return "이미 가입된 이메일입니다. 로그인으로 들어가세요.";
   if (code === "auth/invalid-email") return "아이디 또는 이메일 형식을 확인해주세요.";
-  if (code === "auth/invalid-credential") return "아이디 또는 비밀번호를 확인해주세요.";
+  if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") return "아이디 또는 비밀번호를 확인해주세요.";
+  if (code === "auth/user-disabled") return "사용이 중지된 계정입니다. Firebase 콘솔에서 확인해주세요.";
+  if (code === "auth/network-request-failed") return "인터넷 연결을 확인해주세요.";
   if (code === "auth/unauthorized-domain") return "Firebase Authentication 승인 도메인에 kdynt17.github.io를 추가해주세요.";
   if (code === "auth/weak-password") return "비밀번호는 6자 이상이어야 합니다.";
   if (code === "auth/missing-email") return "가입한 이메일을 입력해주세요.";
@@ -1530,6 +1572,8 @@ function clearSubscriptions() {
   unsubscribers = [];
   rankUnsubscribe?.();
   rankUnsubscribe = null;
+  brainMount?.();
+  brainMount = null;
 }
 
 function setMessage(element, message) {

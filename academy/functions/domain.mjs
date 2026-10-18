@@ -1,10 +1,14 @@
-export const ROUND_MS = 60000;
+// 게임마다 한 판 시간이 다르다. 빨리 고르는 직감은 짧게, 기억·관찰이 필요한 게임은 조금 길게.
+export const ROUND_MS = 45000; // 가장 긴 한 판(기록 검사 상한)
+export const MIN_ROUND_MS = 30000; // 가장 짧은 한 판(DB 규칙의 최소 진행 시간)
+const ROUND_TIME = { mole: 30000, focus: 30000, largest: 30000, memory: 45000, sequence: 45000, blocks: 40000, balance: 35000, ladder: 40000, hammer: 40000, balloons: 35000, pieces: 40000, rail: 40000, view: 40000 };
+export function roundMs(game) { return ROUND_TIME[game] ?? ROUND_MS; }
 export const CATEGORIES = ['직감', '기억', '분석', '계산', '지각'];
 export const GAMES = [
   { id: 'mole', name: '그림두더지', category: 0, help: '목표 그림과 같은 그림을 고르세요.' },
   { id: 'focus', name: '가운데만 봐', category: 0, help: '주변 화살표를 무시하고 가운데 화살표 방향을 고르세요.' },
   { id: 'largest', name: '최고 숫자', category: 0, help: '글자 크기가 아니라 숫자 값이 가장 큰 것을 고르세요.' },
-  { id: 'memory', name: '순간기억 60초', category: 1, help: '숫자 위치를 기억한 뒤, 숫자가 사라지면 작은 수부터 누르세요.' },
+  { id: 'memory', name: '순간기억', category: 1, help: '숫자 위치를 기억한 뒤, 숫자가 사라지면 작은 수부터 누르세요.' },
   { id: 'sequence', name: '순서기억', category: 1, help: '차례로 켜지는 칸을 기억하고 같은 순서로 누르세요.' },
   { id: 'blocks', name: '블록매치', category: 2, help: '블록을 눌러 제거하고 목표 모양과 똑같이 만드세요.' },
   { id: 'balance', name: '저울비교', category: 2, help: '비교 관계를 보고 가장 무거운 도형을 고르세요.' },
@@ -17,7 +21,8 @@ export const GAMES = [
 ];
 export function dayKey(now = Date.now()) { return new Date(now + 3 * 3600000).toISOString().slice(0, 10); }
 export function closesAt(day) { return Date.parse(day + 'T21:00:00Z'); }
-export function bonus(rank) { return rank === 1 ? 50 : rank === 2 ? 40 : rank === 3 ? 30 : rank <= 5 ? 25 : rank <= 10 ? 15 : rank <= 15 ? 10 : 0; }
+// 하루 도전 순위 보상: 1등 100P부터 한 등수마다 5P씩 줄고, 17등부터는 기본 20P.
+export function dailyReward(rank) { return Number.isInteger(rank) && rank > 0 ? Math.max(20, 100 - 5 * (rank - 1)) : 20; }
 export function rng(seed) {
   let n = 2166136261;
   for (const c of String(seed)) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
@@ -36,7 +41,7 @@ export function settle(state, now) {
       if (!user) continue;
       user.brainRewards ||= {};
       if (user.brainRewards[day]) continue;
-      const points = 50 + bonus(row.rank);
+      const points = dailyReward(row.rank);
       user.points = Number(user.points || 0) + points;
       user.brainRewards[day] = { points, rank: row.rank, score: row.score, paidAt: now };
     }
@@ -48,23 +53,23 @@ export function traceLadder(start, lines) { return lines.reduce((p, x) => p === 
 export function question(game, seed, index) {
   const r = rng(`${seed}:${game}:${index}`), int = n => Math.floor(r() * n);
   const shuffle = a => a.map(x => [r(), x]).sort((a,b) => a[0]-b[0]).map(x=>x[1]);
-  const level = Math.min(5, Math.floor(index / 4));
+  const level = Math.min(5, Math.floor(index / 3));
   const q = { type: 'choice', prompt: '', choices: [], answer: [], preview: 0 };
   if (game === 'mole') {
     const icons = shuffle(['🐱','🐶','🐼','🐸','🐙','🦊','🐰','🐵','🐨']);
-    q.choices = icons.slice(0, 6 + Math.min(level, 3)); q.answer = [int(q.choices.length)]; q.prompt = `이 그림을 찾아요: ${q.choices[q.answer[0]]}`;
+    q.choices = icons.slice(0, 7 + Math.min(level, 2)); q.answer = [int(q.choices.length)]; q.prompt = `이 그림을 찾아요: ${q.choices[q.answer[0]]}`;
   } else if (game === 'focus') {
-    const arrows = level < 2 ? ['←','→'] : ['←','→','↑','↓'];
+    const arrows = level < 1 ? ['←','→'] : ['←','→','↑','↓'];
     q.choices = arrows; q.answer = [int(arrows.length)]; q.prompt = Array.from({length:5}, (_,i)=>arrows[i===2?q.answer[0]:int(arrows.length)]).join('  ');
   } else if (game === 'largest' || game === 'balloons') {
-    const nums = shuffle(Array.from({length:60}, (_,i)=>(i-20)/(level>1?10:1))).slice(0, game==='largest'?4:5+Math.min(level,3));
+    const nums = shuffle(Array.from({length:80}, (_,i)=>(i-30)/(level>0?10:1))).slice(0, game==='largest'?4+Math.min(level,2):6+Math.min(level,3));
     q.choices = nums.map(String); q.prompt = game==='largest'?'값이 가장 큰 숫자는?':'작은 수부터 차례대로';
     q.answer = game==='largest'?[nums.indexOf(Math.max(...nums))]:nums.map((_,i)=>i).sort((a,b)=>nums[a]-nums[b]);
     q.type = game==='largest'?'choice':'sequence'; q.sizes = nums.map(()=>20+int(30));
   } else if (game === 'memory' || game === 'sequence') {
-    q.type = 'memory'; q.choices = Array(9).fill(''); q.answer = shuffle([0,1,2,3,4,5,6,7,8]).slice(0,3+level);
+    q.type = 'memory'; q.choices = Array(9).fill(''); q.answer = shuffle([0,1,2,3,4,5,6,7,8]).slice(0,Math.min(8,4+level));
     q.answer.forEach((pos,i)=>q.choices[pos]=String(i+1));
-    q.preview = game === 'memory' ? 1800 : q.answer.length * 650 + 400;
+    q.flash = 550; q.preview = game === 'memory' ? 1000 + q.answer.length * 120 : q.answer.length * q.flash + 300;
     q.prompt = game === 'memory'?'작은 숫자가 있던 칸부터 누르세요':'반짝인 순서대로 누르세요';
   } else if (game === 'blocks') {
     q.type = 'remove'; q.target = Array.from({length:9},()=>int(2));
@@ -76,14 +81,14 @@ export function question(game, seed, index) {
     q.prompt=shuffle([`${shapes[0]} < ${shapes[1]}`,`${shapes[1]} < ${shapes[2]}`,`${shapes[2]} < ${shapes[3]}`]).join('     ');
     q.caption='가장 무거운 도형은? ( < 오른쪽이 더 무거움)'; q.answer=[q.choices.indexOf(shapes[3])];
   } else if (game === 'ladder') {
-    q.lines=Array.from({length:4},()=>int(3)); q.start=int(4); q.slot=int(5);
+    q.lines=Array.from({length:4+Math.min(level,2)},()=>int(3)); q.start=int(4); q.slot=int(q.lines.length+1);
     const candidate=int(3), full=[...q.lines];full.splice(q.slot,0,candidate);q.end=traceLadder(q.start,full);
     q.choices=['1–2 연결','2–3 연결','3–4 연결'];
     q.valid=q.choices.map((_,i)=>{const ls=[...q.lines];ls.splice(q.slot,0,i);return traceLadder(q.start,ls)===q.end;});
     q.answer=[candidate]; q.prompt=`${q.start+1}번 출발 → ${q.end+1}번 도착. ? 위치에 넣을 선은?`;
   } else if (game === 'hammer') {
-    q.type='sum'; q.numbers=Array.from({length:4+Math.min(level,2)},()=>int(16)-3);q.choices=q.numbers.map(String);
-    q.targetSum=q.numbers.slice(0,2).reduce((a,b)=>a+b,0);q.answer=q.numbers.map((_,i)=>i).slice(2);q.prompt=`목표 합 ${q.targetSum} · 필요 없는 숫자를 부수세요`;
+    q.type='sum'; q.numbers=Array.from({length:5+Math.min(level,3)},()=>int(20)-6);q.choices=q.numbers.map(String);
+    const keep=shuffle(q.numbers.map((_,i)=>i)).slice(0,level<2?2:3);q.targetSum=keep.reduce((a,i)=>a+q.numbers[i],0);q.answer=q.numbers.map((_,i)=>i).filter(i=>!keep.includes(i));q.prompt=`목표 합 ${q.targetSum} · 필요 없는 숫자를 부수세요`;
   } else if (game === 'pieces') {
     q.target=Array.from({length:9},()=>int(2));q.target[4]=1;
     q.given=q.target.map(v=>v&&int(2));if(q.given.every((v,i)=>v===q.target[i])) q.given[4]=0;
@@ -117,7 +122,7 @@ export function scoreRound(game, seed, events) {
   let score=0, combo=0, last=0, correct=0, cooldown=0;
   events.forEach((e,i)=>{
     const q=question(game,seed,i);
-    if(!Number.isFinite(e.at)||e.at<last+Math.max(180,q.preview)+cooldown||e.at>ROUND_MS) throw new Error('기록 시간 오류');
+    if(!Number.isFinite(e.at)||e.at<last+Math.max(180,q.preview)+cooldown||e.at>roundMs(game)) throw new Error('기록 시간 오류');
     last=e.at; const ok=isCorrect(q,e.selected);cooldown=ok?0:400;
     if(ok){correct++;combo++;score+=100+Math.min(combo-1,10)*5;}else combo=0;
   });

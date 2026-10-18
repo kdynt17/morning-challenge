@@ -1,38 +1,12 @@
 <!doctype html>
 <html lang="ko">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffd23f" />
-    <title>두뇌교실 · 2-5 아침 챌린지</title>
-    <link rel="icon" href="assets/icon-192.png" type="image/png" />
-    <link rel="apple-touch-icon" href="assets/icon-180.png" />
-    <link rel="manifest" href="../manifest.webmanifest" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
-    <link rel="stylesheet" href="../styles.css?v=20261019-unified" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>두뇌교실</title>
+    <!-- 두뇌교실은 이제 메인 앱 안에서 열린다. 예전 주소로 들어오면 그쪽으로 보낸다. -->
+    <meta http-equiv="refresh" content="0; url=../?page=games" />
+    <script>location.replace("../?page=games");</script>
   </head>
-  <body class="is-authenticated">
-    <main>
-      <section class="shell">
-        <header class="topbar">
-          <div class="topbar-title">
-            <span class="class-tag">2-5</span>
-            <h1>두뇌교실</h1>
-            <p class="topbar-date"><a href="../rules.html">게임·포인트 규칙</a></p>
-          </div>
-          <a class="points-pill" href="../?page=profile" aria-label="내 정보"><img src="assets/mascot-medal.webp" alt="" width="30" height="30" />내 정보</a>
-        </header>
-        <p id="account-message" class="alert" role="status">로그인 확인 중…</p>
-        <div id="brain-root" class="brain-root"></div>
-        <nav class="bottom-nav" aria-label="메뉴">
-          <a href="../"><img src="assets/mascot-hello.webp" alt="" width="30" height="30" />홈</a>
-          <a class="active" href="./" aria-current="page"><img src="assets/mascot-professor.webp" alt="" width="30" height="30" />두뇌교실</a>
-          <a href="../?page=leaderboard"><img src="assets/mascot-medal.webp" alt="" width="30" height="30" />순위</a>
-          <a href="../?page=store"><img src="assets/animal-pig.webp" alt="" width="30" height="30" />상점</a>
-          <a href="../?page=profile"><img src="assets/mascot-think.webp" alt="" width="30" height="30" />내 정보</a>
-        </nav>
-      </section>
-    </main>
-    <script type="module" src="entry.js"></script>
-  </body>
+  <body><a href="../?page=games">두뇌교실로 이동</a></body>
 </html>

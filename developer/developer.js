@@ -81,12 +81,14 @@ async function handleLogin(event) {
   event.preventDefault();
   setMessage(loginMessage, "로그인하는 중입니다.");
   const rawLogin = $("#dev-login-email").value.trim();
-  const email = rawLogin === ADMIN_LOGIN ? ADMIN_AUTH_EMAIL : rawLogin;
+  // 휴대폰 자판이 첫 글자를 대문자로 바꿔도 관리자 아이디로 알아본다.
+  const lower = rawLogin.toLowerCase();
+  const email = [ADMIN_LOGIN, "admin", ADMIN_AUTH_EMAIL].includes(lower) ? ADMIN_AUTH_EMAIL : rawLogin;
 
   try {
     await signInWithEmailAndPassword(auth, email, $("#dev-login-password").value);
   } catch (error) {
-    setMessage(loginMessage, error.code === "auth/invalid-credential" ? "아이디 또는 비밀번호를 확인해주세요." : "로그인하지 못했습니다.");
+    setMessage(loginMessage, ["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(error.code) ? "아이디 또는 비밀번호를 확인해주세요." : `로그인하지 못했습니다. (${error.code ?? "알 수 없는 오류"})`);
   }
 }
 

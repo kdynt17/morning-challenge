@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
-    <link rel="stylesheet" href="styles.css?v=20261019-unified" />
-    <script type="module" src="app.js?v=20261019-unified"></script>
+    <link rel="stylesheet" href="styles.css?v=20261019-fix" />
+    <script type="module" src="app.js?v=20261019-fix"></script>
   </head>
   <body>
     <main>
@@ -45,7 +45,7 @@
           </div>
           <section id="login-panel" class="auth-panel active-auth-panel" aria-label="로그인">
             <form id="login-form" class="stack-form">
-              <label>이메일<input id="login-email" name="email" type="text" inputmode="email" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="username" required /></label>
+              <label>이메일<input id="login-email" name="email" type="text" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="username" required /></label>
               <label>비밀번호<input id="login-password" name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required /></label>
               <label class="checkbox-label"><input id="remember-me" type="checkbox" checked /> 로그인 상태 유지 (공용 컴퓨터면 끄세요)</label>
               <button class="primary-button" type="submit">들어가기</button>
@@ -95,18 +95,10 @@
         <section id="home-page" class="page active-page" data-page="home">
           <p id="greeting" class="greeting">좋은 아침!</p>
 
-          <article class="card brain-hero">
-            <div class="brain-top">
-              <p class="card-label">나의 말랑그램</p>
-
-            </div>
-            <div class="brain-figure">
-              <p class="hero-figure"><span id="brain-bq">?</span></p>
-              <span id="brain-grade" class="grade-badge">측정 중</span>
-            </div>
-            <div id="area-bars" class="area-bars"></div>
-
-            <p id="brain-caption" class="meter-caption">5영역을 해보면 말랑그램이 나와요</p>
+          <article class="card brain-hero home-brain">
+            <p class="card-label">나의 두뇌 무게</p>
+            <div id="brain-summary" class="home-brain-body"></div>
+            <p class="meter-caption">영역별 최근 7번 기록의 평균 · 재미로 보는 두뇌 무게예요</p>
           </article>
 
           <article class="card attendance-card">
@@ -115,9 +107,9 @@
               <p class="card-label">출석 체크</p>
               <h2 id="attendance-title">오늘 아직 출석 전이에요</h2>
               <div id="streak-dots" class="streak-dots" aria-label="7일 연속 출석 진행도"></div>
-              <p id="attendance-caption" class="meter-caption">매일 +10P · 7일 연속이면 +30P 보너스</p>
+              <p id="attendance-caption" class="meter-caption">월~금 들어오면 자동 출석 +10P · 7일 연속이면 +30P</p>
             </div>
-            <button id="attendance-button" class="primary-button attendance-button" type="button">출석하기 +10P</button>
+            <button id="attendance-button" class="primary-button attendance-button" type="button" hidden>출석 다시 시도</button>
           </article>
 
           <div class="stat-row">
@@ -133,12 +125,14 @@
             </article>
           </div>
 
-          <a class="primary-button big-cta" href="academy/">두뇌교실 5과목 하러 가기 →</a>
+          <button class="primary-button big-cta" type="button" data-target-page="games">두뇌교실 5과목 하러 가기 →</button>
           <a class="secondary-button link-button" href="rules.html">새 게임·포인트 규칙 보기</a>
         </section>
 
         <!-- 게임 목록 -->
-        <section id="games-page" class="page" data-page="games"><a href="academy/">5영역 두뇌교실 열기</a></section>
+        <section id="games-page" class="page" data-page="games">
+          <div id="brain-root" class="academy-root"></div>
+        </section>
 
 
 
@@ -190,16 +184,6 @@
 
         <!-- 순위 -->
         <section id="leaderboard-page" class="page" data-page="leaderboard">
-          <div class="chip-tabs" role="tablist" aria-label="순위 종류">
-
-            <button type="button" role="tab" data-rank-tab="calc">계산 20</button>
-            <button type="button" role="tab" data-rank-tab="stroop">색깔 판단</button>
-            <button type="button" role="tab" data-rank-tab="memory">순간 기억</button>
-
-
-
-            <button type="button" role="tab" data-rank-tab="points">포인트</button>
-          </div>
           <p id="rank-caption" class="helper-text no-margin"></p>
           <div id="leaderboard-list" class="rank-list"><p class="empty-text">순위를 불러오고 있어요.</p></div>
         </section>

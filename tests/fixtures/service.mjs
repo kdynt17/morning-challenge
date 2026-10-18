@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { dayKey, closesAt, lineup, GAMES, ROUND_MS, scoreRound, settle } from '../../academy/functions/domain.mjs';
+import { dayKey, closesAt, lineup, GAMES, roundMs, scoreRound, settle } from '../../academy/functions/domain.mjs';
 
 // Pure transaction reducer: all balances, completion flags and awards commit together.
 export function applyAction(state, uid, action, input, now, id = randomUUID()) {
@@ -26,12 +26,11 @@ export function applyAction(state, uid, action, input, now, id = randomUUID()) {
   if(action==='start') {
     if(input.mode==='daily') {
       if(sessions[day]) return state;
-      if(closesAt(day)-now<5*(ROUND_MS+5000)) throw new Error('오전 6시 갱신까지 시간이 부족합니다. 갱신 후 시작해주세요.');
+      if(closesAt(day)-now<lineup(day).reduce((t,g)=>t+roundMs(g)+5000,0)) throw new Error('오전 6시 갱신까지 시간이 부족합니다. 갱신 후 시작해주세요.');
       sessions[day]={id:day,mode:'daily',day,games:lineup(day),seed:day,stage:0,startedAt:now,results:[],events:[]};
     } else if(input.mode==='practice') {
       if(!brain.daily?.[day]?.[uid]) throw new Error('오늘의 챌린지를 먼저 완료해주세요.');
       if(!GAMES.some(g=>g.id===input.game)) throw new Error('게임을 선택해주세요.');
-      if(sessions.practice && !sessions.practice.done && sessions.practice.day===day) return state;
       sessions.practice={id,mode:'practice',day,games:[input.game],seed:id,stage:0,startedAt:now,results:[],events:[]};
     } else throw new Error('진행 모드 오류');
   } else if(action==='finish') {
@@ -40,7 +39,7 @@ export function applyAction(state, uid, action, input, now, id = randomUUID()) {
     // Repeated network retries of the same stage return the committed result.
     if(s.stage>input.stage || s.done) return state;
     if(s.day!==day) throw new Error('오전 6시에 마감된 도전입니다. 오늘 도전을 시작해주세요.');
-    if(s.stage!==input.stage||now-s.startedAt<ROUND_MS) throw new Error('게임 시간이 아직 끝나지 않았습니다.');
+    if(s.stage!==input.stage||now-s.startedAt<roundMs(s.games[s.stage])) throw new Error('게임 시간이 아직 끝나지 않았습니다.');
     const game=s.games[s.stage], result=scoreRound(game,`${s.seed}:${s.stage}`,input.events);
     s.results ||= [];s.results.push({...result,game});s.stage++;s.events=[];s.questionStartedAt=null;
     const category=GAMES.find(g=>g.id===game).category;
