@@ -11,6 +11,7 @@ import {
 import {
   get,
   getDatabase,
+  limitToFirst,
   limitToLast,
   onValue,
   orderByChild,
@@ -25,11 +26,34 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
 import { firebaseConfig } from "./firebase-config.js";
+import { createMinesweeper } from "./minesweeper.js?v=20261018-minesweeper";
 
 const ADMIN_LOGIN = "admin@admin";
 const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
-const WRONG_ANSWER_PENALTY = 10;
+
+// ── 포인트 설계 ─────────────────────────────────────────────
+// 꾸준히 하는 학생(매일 출석 + 게임 포인트 상한)은 하루 약 44P → 2,000P까지 약 6~7주.
+// 가볍게 하는 학생(출석 + 중급 1판)은 하루 약 26P → 약 2달 반.
+const POINT_GOAL = 2000;
+const ATTENDANCE_POINTS = 10;
+const STREAK_BONUS_EVERY = 7;
+const STREAK_BONUS_POINTS = 30;
+const DAILY_GAME_POINT_CAP = 30;
+const GAME_RULES = {
+  beginner: { label: "초급", rows: 9, cols: 9, mines: 10, points: 5, minMs: 2000 },
+  intermediate: { label: "중급", rows: 16, cols: 16, mines: 40, points: 12, minMs: 8000 },
+  expert: { label: "고급", rows: 16, cols: 30, mines: 99, points: 30, minMs: 25000 },
+};
+const MONTHLY_REWARDS = {
+  expert: [100, 60, 40],
+  intermediate: [60, 40, 20],
+  beginner: [30, 20, 10],
+};
+const DIFFICULTIES = ["beginner", "intermediate", "expert"];
+const TUTORIAL_HIDDEN_KEY = "mc.minesweeperTutorialHidden";
+const DAY_MS = 86400000;
+const KST_OFFSET_MS = 9 * 3600000;
 
 const $ = (selector) => document.querySelector(selector);
 const setupRequired = firebaseConfig.apiKey.startsWith("PASTE_");
@@ -45,31 +69,16 @@ const loginPanel = $("#login-panel");
 const signupPanel = $("#signup-panel");
 const loginForm = $("#login-form");
 const signupForm = $("#signup-form");
-const logoutButton = $("#logout-button");
 const authMessage = $("#auth-message");
 const signupMessage = $("#signup-message");
-const answerForm = $("#answer-form");
-const answerInput = $("#answer");
-const answerMessage = $("#answer-message");
-const challengeDate = $("#challenge-date");
-const challengeStatus = $("#challenge-status");
-const challengeTitle = $("#challenge-title");
-const challengeImage = $("#challenge-image");
-const challengeDescription = $("#challenge-description");
-const leaderboardList = $("#leaderboard-list");
-const storeList = $("#store-list");
 const pageTitle = $("#page-title");
 const todayLabel = $("#today-label");
-const myPoints = $("#my-points");
+const leaderboardList = $("#leaderboard-list");
+const rankCaption = $("#rank-caption");
+const storeList = $("#store-list");
 const profileMessage = $("#profile-message");
-const profileName = $("#profile-name");
-const profileEmail = $("#profile-email");
-const profileRole = $("#profile-role");
-const profilePoints = $("#profile-points");
 const purchaseHistoryList = $("#purchase-history-list");
 const adminNavButton = $("#admin-nav-button");
-const challengeForm = $("#challenge-form");
-const deleteChallengeButton = $("#delete-challenge-button");
 const productForm = $("#product-form");
 const adminProductList = $("#admin-product-list");
 const adminUsedList = $("#admin-used-list");
@@ -87,26 +96,47 @@ const dialogBalance = $("#dialog-balance");
 const dialogAfterBalance = $("#dialog-after-balance");
 const buyProductButton = $("#buy-product-button");
 const purchaseMessage = $("#purchase-message");
-const navButtons = document.querySelectorAll("[data-target-page]");
+const attendanceButton = $("#attendance-button");
+const tutorialDialog = $("#tutorial-dialog");
+const resultDialog = $("#result-dialog");
+const msStatus = $("#ms-status");
+const msTimer = $("#ms-timer");
+const msMinesLeft = $("#ms-mines-left");
+const flagModeButton = $("#ms-flag-mode");
+const rewardPreview = $("#reward-preview");
+const rewardSubmitButton = $("#reward-submit-button");
+
+const pageNames = {
+  home: "홈",
+  game: "지뢰찾기",
+  leaderboard: "순위",
+  store: "포인트 상점",
+  profile: "내 정보",
+  admin: "선생님 관리",
+};
 
 let auth;
 let db;
 let currentUser = null;
 let currentProfile = null;
-let currentChallengeId = null;
-let currentChallenge = null;
-let currentChallengeResult = null;
 let selectedProduct = null;
 let adminStudents = [];
 let unsubscribers = [];
-
-const pageNames = {
-  home: "오늘의 문제",
-  leaderboard: "포인트 순위",
-  store: "포인트 상점",
-  profile: "내 정보",
-  admin: "선생님 관리",
-};
+let rankUnsubscribe = null;
+let serverOffsetMs = 0;
+let attendance = null;
+let gameDaily = null;
+let monthBests = {};
+let allTimeBests = {};
+let currentDifficulty = "beginner";
+let currentRankTab = "beginner";
+let game = null;
+let gameStarted = false;
+let timerHandle = null;
+let tutorialShownThisSession = false;
+let rewardPlan = null;
+let toastTimer = null;
+let sessionDay = null;
 
 if (setupRequired) {
   setMessage(authMessage, "Firebase 설정값을 firebase-config.js에 넣어주세요.");
@@ -115,34 +145,61 @@ if (setupRequired) {
   auth = getAuth(app);
   db = getDatabase(app);
 
+  onValue(ref(db, ".info/serverTimeOffset"), (snapshot) => {
+    serverOffsetMs = Number(snapshot.val() ?? 0);
+  });
+
   showLoginButton.addEventListener("click", () => setAuthMode("login"));
   showSignupButton.addEventListener("click", () => setAuthMode("signup"));
   loginForm.addEventListener("submit", handleLogin);
   $("#forgot-password-button").addEventListener("click", handlePasswordReset);
   signupForm.addEventListener("submit", handleSignup);
-  logoutButton.addEventListener("click", () => signOut(auth));
+  $("#logout-button").addEventListener("click", () => signOut(auth));
   $("#pending-logout-button").addEventListener("click", () => signOut(auth));
-  answerInput.addEventListener("input", () => setMessage(answerMessage, ""));
-  answerForm.addEventListener("submit", handleAnswerSubmit);
-  challengeForm.addEventListener("submit", handleChallengeSave);
-  deleteChallengeButton.addEventListener("click", handleChallengeDelete);
   productForm.addEventListener("submit", handleProductSave);
   pointGrantForm.addEventListener("submit", handlePointGrant);
   buyProductButton.addEventListener("click", handlePurchase);
-
-  navButtons.forEach((button) => {
-    button.addEventListener("click", () => showPage(button.dataset.targetPage));
+  attendanceButton.addEventListener("click", handleAttendance);
+  $("#reward-preview-button").addEventListener("click", previewMonthlyRewards);
+  $("#monthly-reward-form").addEventListener("submit", handleMonthlyRewards);
+  $("#reward-month").addEventListener("change", () => {
+    rewardPlan = null;
+    rewardSubmitButton.disabled = true;
+    rewardPreview.innerHTML = "";
   });
 
-  $("#admin-challenge-date").value = getKoreaDateKey();
+  document.querySelectorAll("[data-target-page]").forEach((button) => {
+    button.addEventListener("click", () => showPage(button.dataset.targetPage));
+  });
+  document.querySelectorAll("[data-difficulty]").forEach((button) => {
+    button.addEventListener("click", () => selectDifficulty(button.dataset.difficulty));
+  });
+  document.querySelectorAll("[data-rank-tab]").forEach((button) => {
+    button.addEventListener("click", () => selectRankTab(button.dataset.rankTab));
+  });
+
+  setupGame();
+  setupTutorial();
   setAuthMode("login");
+
+  // 자정이나 월이 바뀐 채로 화면을 켜 두면 날짜 기준 구독을 새로 연다.
+  setInterval(() => {
+    if (!currentUser || sessionDay === null || !document.body.classList.contains("is-authenticated")) return;
+    if (kstDay(serverNow()) === sessionDay) return;
+    const activePage = document.querySelector(".page.active-page")?.dataset.page ?? "home";
+    clearSubscriptions();
+    enterApp(activePage === "game" ? "home" : activePage);
+  }, 60000);
 
   onAuthStateChanged(auth, async (user) => {
     clearSubscriptions();
     currentUser = user;
     currentProfile = null;
-    currentChallengeResult = null;
     selectedProduct = null;
+    attendance = null;
+    gameDaily = null;
+    monthBests = {};
+    allTimeBests = {};
 
     if (!user) {
       showSignedOut();
@@ -158,14 +215,16 @@ if (setupRequired) {
   });
 }
 
-function enterApp() {
+function enterApp(page = "home") {
+  sessionDay = kstDay(serverNow());
   showSignedIn();
   renderProfile(currentUser, currentProfile);
-  showPage("home");
+  showPage(page);
   subscribeProfile();
-  subscribeChallenge();
-  subscribeMyChallengeResult();
-  subscribeLeaderboard();
+  subscribeAttendance();
+  subscribeGameDaily();
+  subscribeMyBests();
+  selectRankTab(currentRankTab);
   subscribeStore();
   subscribePurchaseHistory();
   subscribeAdminTools();
@@ -199,6 +258,8 @@ function showPendingApproval(profile) {
     ? "선생님에게 확인해 주세요."
     : `${profile?.name ?? "학생"} 님의 가입 신청이 접수되었습니다. 선생님이 승인하면 이 화면이 자동으로 넘어갑니다.`;
 }
+
+// ── 로그인 / 가입 ───────────────────────────────────────────
 
 async function handleLogin(event) {
   event.preventDefault();
@@ -324,15 +385,24 @@ function renderProfile(user, profile) {
   const teacher = isTeacher(profile, user);
   const points = Number(profile?.points ?? 0);
 
-  myPoints.textContent = points;
-  profileMessage.textContent = teacher
-    ? "문제와 상점 상품을 등록할 수 있습니다."
-    : `${name} 님, 오늘 문제를 확인해보세요.`;
-  profileName.textContent = name;
-  profileEmail.textContent = profile?.email ?? user.email;
-  profileRole.textContent = teacher ? "선생님" : "학생";
-  profilePoints.textContent = points;
+  $("#my-points").textContent = formatNumber(points);
+  $("#header-points-value").textContent = formatNumber(points);
+  $("#profile-points").textContent = formatNumber(points);
+  $("#profile-name").textContent = name;
+  $("#profile-email").textContent = profile?.email ?? user.email;
+  $("#profile-role").textContent = teacher ? "선생님" : "학생";
+  $("#greeting").textContent = `${name} 님, ${greetingByHour()}`;
+  profileMessage.textContent = teacher ? "선생님 계정은 포인트와 게임 기록이 저장되지 않아요." : "";
   adminNavButton.hidden = !teacher;
+  document.body.classList.toggle("is-teacher", teacher);
+
+  const ratio = Math.min(1, points / POINT_GOAL);
+  $("#goal-meter-fill").style.width = `${ratio * 100}%`;
+  $("#goal-meter").setAttribute("aria-valuenow", String(points));
+  $("#goal-text").textContent = points >= POINT_GOAL
+    ? `목표 ${formatNumber(POINT_GOAL)}P 달성! 상점을 확인해 보세요`
+    : `목표 ${formatNumber(POINT_GOAL)}P까지 ${formatNumber(POINT_GOAL - points)}P 남았어요`;
+  renderAttendance();
 }
 
 async function syncLeaderboardProfile(uid, profile) {
@@ -370,7 +440,7 @@ function setAuthMode(mode) {
   showSignupButton.classList.toggle("active", isSignup);
   showLoginButton.setAttribute("aria-selected", String(!isSignup));
   showSignupButton.setAttribute("aria-selected", String(isSignup));
-  setMessage(authMessage, isSignup ? "처음이면 이름, 이메일, 비밀번호를 입력하세요." : "이메일과 비밀번호로 로그인하세요.");
+  setMessage(authMessage, isSignup ? "이름, 이메일, 비밀번호를 입력하세요." : "이메일과 비밀번호로 로그인하세요.");
 }
 
 function showSignedIn() {
@@ -386,96 +456,434 @@ function showSignedOut() {
   pendingScreen.hidden = true;
   appShell.hidden = true;
   setAuthMode("login");
-  setMessage(authMessage, "이메일과 비밀번호로 로그인하세요.");
 }
 
 function showPage(page) {
   document.querySelectorAll(".page").forEach((section) => {
     section.classList.toggle("active-page", section.dataset.page === page);
   });
-
-  navButtons.forEach((button) => {
+  document.querySelectorAll(".bottom-nav [data-target-page]").forEach((button) => {
     button.classList.toggle("active", button.dataset.targetPage === page);
   });
 
-  pageTitle.textContent = pageNames[page] ?? "아침 창의력 챌린지";
-  todayLabel.textContent = getKoreaDateKey();
+  pageTitle.textContent = pageNames[page] ?? "아침 챌린지";
+  todayLabel.textContent = formatKoreanDate(serverNow());
+  window.scrollTo({ top: 0 });
+
+  if (page === "game") {
+    if (!gameStarted) startNewGame();
+    requestAnimationFrame(() => game.fitToWidth());
+    if (!tutorialShownThisSession && !isTutorialHidden()) {
+      tutorialShownThisSession = true;
+      tutorialDialog.showModal();
+    }
+  }
 }
 
-function subscribeChallenge() {
-  const today = getKoreaDateKey();
-  const challengeRef = ref(db, `dailyChallenges/${today}`);
+// ── 출석 체크 ───────────────────────────────────────────────
 
-  const unsubscribe = onValue(challengeRef, (snapshot) => {
-    if (!snapshot.exists()) {
-      currentChallengeId = null;
-      currentChallenge = null;
-      challengeDate.textContent = today;
-      challengeTitle.textContent = "오늘의 문제가 아직 등록되지 않았습니다.";
-      challengeDescription.textContent = "선생님이 문제를 등록하면 자동으로 표시됩니다.";
-      challengeImage.hidden = true;
-      challengeImage.removeAttribute("src");
-      renderChallengeAvailability();
-      return;
-    }
-
-    const challenge = snapshot.val();
-    currentChallengeId = snapshot.key;
-    currentChallenge = challenge;
-    challengeDate.textContent = today;
-    challengeTitle.textContent = challenge.title;
-    challengeDescription.textContent = challenge.description;
-    renderImage(challengeImage, challenge.imageUrl);
-    setMessage(answerMessage, "");
-    renderChallengeAvailability();
+function subscribeAttendance() {
+  const unsubscribe = onValue(ref(db, `attendance/${currentUser.uid}`), (snapshot) => {
+    attendance = snapshot.exists() ? snapshot.val() : null;
+    renderAttendance();
   });
   unsubscribers.push(unsubscribe);
 }
 
-function subscribeMyChallengeResult() {
-  const today = getKoreaDateKey();
-  const unsubscribe = onValue(ref(db, `challengeResults/${today}/${currentUser.uid}`), (snapshot) => {
-    currentChallengeResult = snapshot.exists() ? snapshot.val() : null;
-    renderChallengeAvailability();
+function renderAttendance() {
+  if (!currentUser) return;
+  const today = kstDay(serverNow());
+  const checkedToday = attendance?.day === today;
+  const alive = attendance && (attendance.day === today || attendance.day === today - 1);
+  const streak = alive ? Number(attendance.streak ?? 0) : 0;
+  const teacher = isTeacher(currentProfile, currentUser);
+
+  $("#streak-count").textContent = streak;
+  $("#attendance-total").textContent = `누적 ${Number(attendance?.total ?? 0)}일`;
+  $("#attendance-title").textContent = teacher
+    ? "선생님은 출석 체크를 하지 않아요"
+    : checkedToday
+      ? `출석 완료! ${streak}일 연속`
+      : streak
+        ? `${streak}일 연속 중 · 오늘도 이어가요`
+        : "오늘 아직 출석 전이에요";
+
+  const inCycle = streak === 0 ? 0 : ((streak - 1) % STREAK_BONUS_EVERY) + 1;
+  $("#streak-dots").innerHTML = Array.from({ length: STREAK_BONUS_EVERY }, (_, i) => {
+    const filled = i < inCycle;
+    const bonus = i === STREAK_BONUS_EVERY - 1;
+    return `<span class="streak-dot${filled ? " filled" : ""}${bonus ? " bonus" : ""}">${bonus ? "+30" : i + 1}</span>`;
+  }).join("");
+
+  attendanceButton.disabled = teacher || checkedToday;
+  const willBonus = (streak + (checkedToday ? 0 : 1)) % STREAK_BONUS_EVERY === 0;
+  attendanceButton.textContent = checkedToday
+    ? "내일 또 만나요"
+    : `출석하기 +${ATTENDANCE_POINTS + (willBonus ? STREAK_BONUS_POINTS : 0)}P`;
+  attendanceButton.classList.toggle("is-done", checkedToday);
+}
+
+async function handleAttendance() {
+  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
+  const today = kstDay(serverNow());
+  if (attendance?.day === today) return;
+
+  attendanceButton.disabled = true;
+  let streak;
+  try {
+    const latest = (await get(ref(db, `attendance/${currentUser.uid}`))).val();
+    if (latest?.day === today) return;
+    streak = latest && latest.day === today - 1 ? Number(latest.streak ?? 0) + 1 : 1;
+    const total = Number(latest?.total ?? 0) + 1;
+    // 출석 기록 세 곳을 한 번에 저장한다(하나라도 실패하면 모두 저장되지 않음).
+    await update(ref(db), {
+      [`attendance/${currentUser.uid}`]: { day: today, streak, total, at: serverTimestamp() },
+      [`attendanceDays/${today}/${currentUser.uid}`]: { name: currentProfile?.name ?? "학생", at: serverTimestamp() },
+      [`users/${currentUser.uid}/todayResult`]: `${streak}일 연속 출석`,
+    });
+  } catch (error) {
+    attendanceButton.disabled = false;
+    showToast("출석 체크에 실패했어요. 잠시 후 다시 눌러 주세요.");
+    return;
+  }
+
+  // 출석은 이미 기록됐으므로, 포인트 반영은 실패해도 몇 번 더 시도한다.
+  const bonus = streak % STREAK_BONUS_EVERY === 0 ? STREAK_BONUS_POINTS : 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await addMyPoints(ATTENDANCE_POINTS + bonus);
+      showToast(bonus
+        ? `${streak}일 연속 출석! +${ATTENDANCE_POINTS}P, 보너스 +${bonus}P`
+        : `출석 완료! +${ATTENDANCE_POINTS}P`);
+      return;
+    } catch (error) {
+      await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+    }
+  }
+  showToast("출석은 됐지만 포인트 반영에 실패했어요. 선생님께 말씀해 주세요.");
+}
+
+// ── 지뢰찾기 ────────────────────────────────────────────────
+
+function setupGame() {
+  game = createMinesweeper($("#ms-board"), {
+    onStart: () => {
+      startTimer();
+      msStatus.textContent = "깃발: PC는 오른쪽 클릭, 폰은 길게 누르기";
+      if (canSaveGame()) void bumpStat(currentDifficulty, "plays");
+    },
+    onChange: ({ minesLeft }) => {
+      msMinesLeft.textContent = minesLeft;
+    },
+    onWin: (result) => void handleWin(result),
+    onLose: () => {
+      stopTimer();
+      msStatus.textContent = "펑! 지뢰를 밟았어요. 새 게임으로 다시 도전!";
+      openResult({
+        eyebrow: GAME_RULES[currentDifficulty].label,
+        title: "아쉬워요!",
+        time: "",
+        detail: "지뢰를 밟았어요. 첫 칸은 항상 안전하니 다시 도전해 보세요.",
+        lost: true,
+      });
+    },
+  });
+
+  $("#ms-restart").addEventListener("click", startNewGame);
+  flagModeButton.addEventListener("click", () => {
+    const next = flagModeButton.getAttribute("aria-pressed") !== "true";
+    flagModeButton.setAttribute("aria-pressed", String(next));
+    $("#ms-flag-mode-label").textContent = next ? "깃발 모드 켜짐" : "깃발 모드 꺼짐";
+    game.setFlagMode(next);
+  });
+  $("#ms-help").addEventListener("click", () => tutorialDialog.showModal());
+  $("#result-again").addEventListener("click", () => {
+    resultDialog.close();
+    startNewGame();
+  });
+  $("#result-rank").addEventListener("click", () => {
+    resultDialog.close();
+    selectRankTab(currentDifficulty);
+    showPage("leaderboard");
+  });
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => game.fitToWidth(), 120);
+  });
+}
+
+function selectDifficulty(difficulty) {
+  if (!GAME_RULES[difficulty]) return;
+  if (game.getState() === "playing" && difficulty !== currentDifficulty && !confirm("진행 중인 게임을 그만두고 난이도를 바꿀까요?")) {
+    return;
+  }
+  currentDifficulty = difficulty;
+  document.querySelectorAll("[data-difficulty]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.difficulty === difficulty);
+  });
+  startNewGame();
+}
+
+function startNewGame() {
+  const rule = GAME_RULES[currentDifficulty];
+  // 고급은 폰 화면에서 세로로 돌려 같은 칸 수(16×30)를 유지한다.
+  const vertical = currentDifficulty === "expert" && window.innerWidth < 720;
+  game.start({
+    rows: vertical ? rule.cols : rule.rows,
+    cols: vertical ? rule.rows : rule.cols,
+    mines: rule.mines,
+  });
+  gameStarted = true;
+  stopTimer();
+  msTimer.textContent = "0.0";
+  msStatus.textContent = "아무 칸이나 눌러서 시작하세요. 첫 칸은 항상 안전해요.";
+}
+
+function startTimer() {
+  stopTimer();
+  timerHandle = setInterval(() => {
+    msTimer.textContent = (game.getElapsedMs() / 1000).toFixed(1);
+  }, 100);
+}
+
+function stopTimer() {
+  clearInterval(timerHandle);
+  timerHandle = null;
+}
+
+function canSaveGame() {
+  return Boolean(currentUser) && !isTeacher(currentProfile, currentUser);
+}
+
+async function handleWin({ timeMs }) {
+  stopTimer();
+  const difficulty = currentDifficulty;
+  const rule = GAME_RULES[difficulty];
+  msTimer.textContent = (timeMs / 1000).toFixed(1);
+  msStatus.textContent = `${rule.label} 성공! ${formatSeconds(timeMs)}`;
+
+  openResult({
+    eyebrow: rule.label,
+    title: "성공!",
+    time: formatSeconds(timeMs),
+    detail: canSaveGame() ? "기록을 저장하는 중이에요…" : "선생님 계정은 기록과 포인트가 저장되지 않아요.",
+  });
+  if (!canSaveGame()) return;
+
+  if (timeMs < rule.minMs) {
+    $("#result-detail").textContent = "기록이 비정상적으로 빨라서 저장하지 않았어요.";
+    return;
+  }
+
+  // 포인트와 기록은 따로 저장해서, 하나가 실패해도 나머지 결과는 정확히 알려 준다.
+  const [points, monthBest, allTimeBest] = await Promise.allSettled([
+    awardGamePoints(rule.points),
+    saveMonthRecord(difficulty, timeMs),
+    saveAllTimeBest(difficulty, timeMs),
+    bumpStat(difficulty, "wins"),
+  ]);
+  const rank = await getMonthRank(difficulty, currentUser.uid).catch(() => null);
+
+  const lines = [];
+  if (points.status === "rejected") {
+    lines.push("포인트를 반영하지 못했어요");
+  } else if (points.value > 0) {
+    lines.push(`+${points.value}P 획득!${points.value < rule.points ? " (오늘 게임 포인트 상한 도달)" : ""}`);
+  } else {
+    lines.push(`오늘 게임 포인트 ${DAILY_GAME_POINT_CAP}P를 다 모았어요. 기록은 저장돼요.`);
+  }
+  if (monthBest.status === "rejected") lines.push("기록을 저장하지 못했어요");
+  else if (allTimeBest.value) lines.push("내 역대 최고 기록 갱신!");
+  else if (monthBest.value) lines.push("이번 달 내 최고 기록 갱신!");
+  if (rank) lines.push(`이번 달 ${rule.label} ${rank}위`);
+  $("#result-detail").textContent = lines.join(" · ");
+}
+
+function openResult({ eyebrow, title, time, detail, lost = false }) {
+  $("#result-eyebrow").textContent = eyebrow;
+  $("#result-title").textContent = title;
+  $("#result-time").textContent = time;
+  $("#result-time").hidden = !time;
+  $("#result-detail").textContent = detail;
+  resultDialog.classList.toggle("is-lost", lost);
+  if (!resultDialog.open) resultDialog.showModal();
+}
+
+async function awardGamePoints(points) {
+  const today = kstDay(serverNow());
+  let granted = 0;
+  const result = await runTransaction(ref(db, `gameDaily/${currentUser.uid}`), (current) => {
+    const used = current?.day === today ? Number(current.points ?? 0) : 0;
+    granted = Math.max(0, Math.min(points, DAILY_GAME_POINT_CAP - used));
+    return { day: today, points: used + granted };
+  });
+  if (!result.committed || granted <= 0) return 0;
+  await addMyPoints(granted);
+  return granted;
+}
+
+async function saveMonthRecord(difficulty, timeMs) {
+  const month = kstMonthKey(serverNow());
+  const result = await runTransaction(ref(db, `msRecords/${month}/${difficulty}/${currentUser.uid}`), (current) => {
+    if (current && Number(current.timeMs) <= timeMs) return undefined;
+    return { name: currentProfile?.name ?? "학생", timeMs, at: serverNow() };
+  });
+  return result.committed;
+}
+
+async function saveAllTimeBest(difficulty, timeMs) {
+  const result = await runTransaction(ref(db, `msBest/${currentUser.uid}/${difficulty}`), (current) => {
+    if (current && Number(current.timeMs) <= timeMs) return undefined;
+    return { timeMs, at: serverNow() };
+  });
+  return result.committed;
+}
+
+async function bumpStat(difficulty, field) {
+  try {
+    await runTransaction(ref(db, `gameStats/${currentUser.uid}/${difficulty}/${field}`), (current) => Number(current ?? 0) + 1);
+  } catch (error) {
+    // 통계는 부가 정보라 실패해도 게임 진행에 영향을 주지 않는다.
+  }
+}
+
+async function getMonthRank(difficulty, uid) {
+  const month = kstMonthKey(serverNow());
+  const snapshot = await get(ref(db, `msRecords/${month}/${difficulty}`));
+  const records = [];
+  snapshot.forEach((child) => {
+    records.push({ uid: child.key, timeMs: Number(child.val().timeMs) });
+  });
+  records.sort((a, b) => a.timeMs - b.timeMs);
+  const index = records.findIndex((record) => record.uid === uid);
+  return index >= 0 ? index + 1 : null;
+}
+
+function subscribeGameDaily() {
+  const unsubscribe = onValue(ref(db, `gameDaily/${currentUser.uid}`), (snapshot) => {
+    gameDaily = snapshot.exists() ? snapshot.val() : null;
+    const today = kstDay(serverNow());
+    const used = gameDaily?.day === today ? Number(gameDaily.points ?? 0) : 0;
+    $("#daily-game-points").textContent = used;
+    $("#daily-game-fill").style.width = `${Math.min(1, used / DAILY_GAME_POINT_CAP) * 100}%`;
   });
   unsubscribers.push(unsubscribe);
 }
 
-function renderChallengeAvailability() {
-  const submitButton = answerForm.querySelector("button");
+function subscribeMyBests() {
+  const month = kstMonthKey(serverNow());
+  DIFFICULTIES.forEach((difficulty) => {
+    const unsubscribe = onValue(ref(db, `msRecords/${month}/${difficulty}/${currentUser.uid}`), (snapshot) => {
+      monthBests[difficulty] = snapshot.exists() ? Number(snapshot.val().timeMs) : null;
+      renderBestGrid($("#my-best-list"), monthBests);
+    });
+    unsubscribers.push(unsubscribe);
+  });
 
-  if (!currentChallenge) {
-    challengeStatus.textContent = "아직 공개 전";
-    submitButton.disabled = true;
-    return;
-  }
-
-  if (currentChallengeResult?.status === "correct") {
-    challengeStatus.textContent = "제출 완료";
-    submitButton.disabled = true;
-    setMessage(answerMessage, "이미 정답을 제출했습니다. 포인트는 한 번만 지급됩니다.");
-    return;
-  }
-
-  if (currentChallengeResult?.status === "awarding") {
-    challengeStatus.textContent = "처리 중";
-    submitButton.disabled = true;
-    return;
-  }
-
-  challengeStatus.textContent = "제출 가능";
-  submitButton.disabled = false;
+  const unsubscribe = onValue(ref(db, `msBest/${currentUser.uid}`), (snapshot) => {
+    const value = snapshot.val() ?? {};
+    allTimeBests = Object.fromEntries(DIFFICULTIES.map((d) => [d, value[d] ? Number(value[d].timeMs) : null]));
+    renderBestGrid($("#all-time-best-list"), allTimeBests);
+  });
+  unsubscribers.push(unsubscribe);
+  renderBestGrid($("#my-best-list"), monthBests);
+  renderBestGrid($("#all-time-best-list"), allTimeBests);
 }
 
-function subscribeLeaderboard() {
-  const studentsQuery = query(ref(db, "leaderboardUsers"), orderByChild("points"), limitToLast(30));
+function renderBestGrid(container, bests) {
+  container.innerHTML = DIFFICULTIES.map((difficulty) => {
+    const time = bests[difficulty];
+    return `
+      <div class="best-item">
+        <span class="best-label">${GAME_RULES[difficulty].label}</span>
+        <span class="best-time">${time ? formatSeconds(time) : "-"}</span>
+      </div>
+    `;
+  }).join("");
+}
 
-  const unsubscribe = onValue(studentsQuery, async (snapshot) => {
-    if (!snapshot.exists()) {
-      leaderboardList.innerHTML = `<p class="empty-text">아직 포인트 기록이 없습니다.</p>`;
-      return;
+function setupTutorial() {
+  $("#tutorial-close").addEventListener("click", () => {
+    if ($("#tutorial-hide").checked) {
+      try {
+        localStorage.setItem(TUTORIAL_HIDDEN_KEY, "1");
+      } catch (error) {
+        // 저장소를 못 쓰는 브라우저에서는 이번 접속 동안만 숨긴다.
+      }
     }
+    tutorialDialog.close();
+  });
+  $("#show-tutorial-button").addEventListener("click", () => {
+    $("#tutorial-hide").checked = false;
+    try {
+      localStorage.removeItem(TUTORIAL_HIDDEN_KEY);
+    } catch (error) {
+      // 무시
+    }
+    tutorialDialog.showModal();
+  });
+}
 
+function isTutorialHidden() {
+  try {
+    return localStorage.getItem(TUTORIAL_HIDDEN_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+// ── 순위 ────────────────────────────────────────────────────
+
+function selectRankTab(tab) {
+  currentRankTab = tab;
+  document.querySelectorAll("[data-rank-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.rankTab === tab);
+  });
+  rankUnsubscribe?.();
+  rankUnsubscribe = null;
+  if (!currentUser) return;
+  leaderboardList.innerHTML = `<p class="empty-text">순위를 불러오고 있어요.</p>`;
+
+  if (tab === "points") {
+    rankCaption.textContent = "지금까지 모은 포인트 순위예요.";
+    subscribePointsLeaderboard();
+  } else {
+    const month = kstMonthKey(serverNow());
+    const [year, mon] = month.split("-");
+    const rewards = MONTHLY_REWARDS[tab].join("·");
+    rankCaption.textContent = `${year}년 ${Number(mon)}월 ${GAME_RULES[tab].label} 최단 기록 순위예요. 월말 TOP 3는 ${rewards}P 보너스!`;
+    subscribeRecordLeaderboard(tab, month);
+  }
+}
+
+function subscribeRecordLeaderboard(difficulty, month) {
+  const recordsQuery = query(ref(db, `msRecords/${month}/${difficulty}`), orderByChild("timeMs"), limitToFirst(30));
+  rankUnsubscribe = onValue(recordsQuery, (snapshot) => {
+    const records = [];
+    snapshot.forEach((child) => {
+      records.push({ uid: child.key, ...child.val() });
+    });
+    records.sort((a, b) => Number(a.timeMs) - Number(b.timeMs));
+    leaderboardList.innerHTML = records.length
+      ? records.map((record, index) => renderRankItem({
+          index,
+          name: record.name,
+          meta: formatDateTime(record.at),
+          value: formatSeconds(record.timeMs),
+          mine: record.uid === currentUser?.uid,
+        })).join("")
+      : `<p class="empty-text">이번 달 첫 기록의 주인공이 되어 보세요!</p>`;
+  }, () => {
+    leaderboardList.innerHTML = `<p class="empty-text">순위를 불러오지 못했어요. 데이터베이스 규칙을 확인해 주세요.</p>`;
+  });
+}
+
+function subscribePointsLeaderboard() {
+  const studentsQuery = query(ref(db, "leaderboardUsers"), orderByChild("points"), limitToLast(40));
+
+  rankUnsubscribe = onValue(studentsQuery, async (snapshot) => {
     const students = [];
     const studentChecks = [];
     snapshot.forEach((child) => {
@@ -498,36 +906,44 @@ function subscribeLeaderboard() {
         }
 
         students.push({
-          ...student,
+          uid: child.key,
           name: profile?.name ?? student?.name,
-          points: profile?.points ?? student?.points,
+          points: Number(profile?.points ?? student?.points ?? 0),
           todayResult: profile?.todayResult ?? student?.todayResult,
         });
       })());
     });
     await Promise.all(studentChecks);
-    students.sort((a, b) => Number(b.points ?? 0) - Number(a.points ?? 0));
+    if (currentRankTab !== "points") return;
+    students.sort((a, b) => b.points - a.points);
 
     leaderboardList.innerHTML = students.length
-      ? students.map(renderRankItem).join("")
+      ? students.map((student, index) => renderRankItem({
+          index,
+          name: student.name,
+          meta: student.todayResult && student.todayResult !== "-" ? student.todayResult : "",
+          value: `${formatNumber(student.points)}P`,
+          mine: student.uid === currentUser?.uid,
+        })).join("")
       : `<p class="empty-text">아직 학생 기록이 없습니다.</p>`;
   });
-  unsubscribers.push(unsubscribe);
 }
 
-function renderRankItem(student, index) {
-  const points = Number(student.points ?? 0);
+function renderRankItem({ index, name, meta, value, mine }) {
+  const place = index + 1;
   return `
-    <article class="rank-item">
-      <span class="rank-number">${index + 1}</span>
-      <div>
-        <p class="rank-name">${escapeHtml(student.name ?? student.email ?? "학생")}</p>
-        <p class="rank-meta">${escapeHtml(student.todayResult ?? "-")}</p>
+    <article class="rank-item${place <= 3 ? ` rank-top rank-${place}` : ""}${mine ? " rank-mine" : ""}">
+      <span class="rank-number">${place}</span>
+      <div class="rank-body">
+        <p class="rank-name">${escapeHtml(name ?? "학생")}${mine ? `<span class="me-tag">나</span>` : ""}</p>
+        ${meta ? `<p class="rank-meta">${escapeHtml(meta)}</p>` : ""}
       </div>
-      <span class="rank-points">${points}점</span>
+      <span class="rank-points">${escapeHtml(value)}</span>
     </article>
   `;
 }
+
+// ── 상점 ────────────────────────────────────────────────────
 
 function subscribeStore() {
   const productsQuery = query(ref(db, "storeProducts"), orderByChild("createdAt"), limitToLast(50));
@@ -594,14 +1010,14 @@ function renderPurchaseHistoryItem(item) {
   const usedMeta = used ? ` · 사용 완료 ${formatDateTime(item.usedAt)}` : "";
 
   return `
-    <article class="history-item purchase-history-item">
+    <article class="history-item">
       <div>
         <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
         <p class="rank-meta">${formatDateTime(item.createdAt)}${escapeHtml(usedMeta)}</p>
       </div>
       <div class="history-actions">
-        <span class="rank-points">-${Number(item.price ?? 0)}점</span>
-        <button class="secondary-button inline-action-button" type="button" data-use-purchase-id="${escapeAttribute(item.id)}"${used ? " disabled" : ""}>${used ? "사용 완료" : "사용 완료"}</button>
+        <span class="rank-points">-${Number(item.price ?? 0)}P</span>
+        <button class="inline-action-button" type="button" data-use-purchase-id="${escapeAttribute(item.id)}"${used ? " disabled" : ""}>${used ? "사용함" : "사용하기"}</button>
       </div>
     </article>
   `;
@@ -610,7 +1026,7 @@ function renderPurchaseHistoryItem(item) {
 async function handlePurchaseUse(purchaseId) {
   if (!currentUser || !purchaseId) return;
 
-  const ok = confirm("이 상품을 사용하시겠습니까?");
+  const ok = confirm("이 상품을 사용하시겠습니까? 선생님께 화면을 보여주세요.");
   if (!ok) return;
 
   try {
@@ -640,178 +1056,20 @@ async function markPurchaseUsed(purchaseId) {
   });
 }
 
-function subscribeAdminTools() {
-  if (!isTeacher(currentProfile, currentUser)) return;
-  subscribeAdminStudents();
-  subscribeAdminProducts();
-  subscribeAdminPurchases();
-}
-
-function subscribeAdminStudents() {
-  const unsubscribe = onValue(ref(db, "users"), (snapshot) => {
-    adminStudents = [];
-
-    if (snapshot.exists()) {
-      snapshot.forEach((child) => {
-        const student = child.val();
-        if (student.role === "teacher") {
-          void remove(ref(db, `leaderboardUsers/${child.key}`));
-        } else if (!isApproved(student)) {
-          void remove(ref(db, `leaderboardUsers/${child.key}`));
-        } else {
-          adminStudents.push({ id: child.key, ...student });
-          void syncLeaderboardProfile(child.key, student);
-        }
-      });
-    }
-
-    adminStudents.sort((a, b) => String(a.name ?? a.email ?? "").localeCompare(String(b.name ?? b.email ?? ""), "ko-KR"));
-    renderGrantStudentOptions();
-  });
-  unsubscribers.push(unsubscribe);
-}
-
-function renderGrantStudentOptions() {
-  if (!grantStudentSelect) return;
-
-  grantStudentSelect.innerHTML = adminStudents.length
-    ? `<option value="">학생을 선택하세요</option>${adminStudents.map((student) => {
-        const label = `${student.name ?? student.email ?? "학생"} (${Number(student.points ?? 0)}점)`;
-        return `<option value="${escapeAttribute(student.id)}">${escapeHtml(label)}</option>`;
-      }).join("")}`
-    : `<option value="">학생이 없습니다</option>`;
-}
-
-function subscribeAdminProducts() {
-  const productsQuery = query(ref(db, "storeProducts"), orderByChild("createdAt"), limitToLast(100));
-
-  const unsubscribe = onValue(productsQuery, (snapshot) => {
-    if (!snapshot.exists()) {
-      adminProductList.innerHTML = `<p class="empty-text">등록된 상품이 없습니다.</p>`;
-      return;
-    }
-
-    const products = [];
-    snapshot.forEach((child) => {
-      const product = child.val();
-      if (product.visible !== false) products.push({ id: child.key, ...product });
-    });
-    sortStoreProducts(products);
-
-    adminProductList.innerHTML = products.length
-      ? products.map(renderAdminProductItem).join("")
-      : `<p class="empty-text">등록된 상품이 없습니다.</p>`;
-
-    adminProductList.querySelectorAll("button[data-delete-product-id]").forEach((button) => {
-      button.addEventListener("click", () => handleProductDelete(button.dataset.deleteProductId));
-    });
-  });
-  unsubscribers.push(unsubscribe);
-}
-
-function renderAdminProductItem(product) {
-  const status = product.visible === false ? "삭제 또는 판매 완료" : product.pinned ? "고정 · 판매 중" : "판매 중";
-  const disabled = product.visible === false ? " disabled" : "";
-
-  return `
-    <article class="admin-list-item">
-      <div>
-        <p class="rank-name">${escapeHtml(product.title ?? "상품")}</p>
-        <p class="rank-meta">${Number(product.price ?? 0)}점 · ${escapeHtml(status)}</p>
-      </div>
-      <button class="inline-danger-button" type="button" data-delete-product-id="${escapeAttribute(product.id)}"${disabled}>삭제</button>
-    </article>
-  `;
-}
-
-function subscribeAdminPurchases() {
-  if (!adminUsedList) return;
-
-  const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
-    if (!snapshot.exists()) {
-      renderAdminPurchaseLists([]);
-      return;
-    }
-
-    const purchases = [];
-    snapshot.forEach((child) => {
-      purchases.push({ id: child.key, ...child.val() });
-    });
-    renderAdminPurchaseLists(purchases);
-  });
-  unsubscribers.push(unsubscribe);
-}
-
-function renderAdminPurchaseLists(purchases) {
-  const usedItems = purchases
-    .filter((item) => item.used)
-    .sort((a, b) => getTimestampValue(b.usedAt) - getTimestampValue(a.usedAt));
-
-  if (adminUsedList) {
-    adminUsedList.innerHTML = usedItems.length
-      ? usedItems.map(renderAdminUsedItem).join("")
-      : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
-
-    adminUsedList.querySelectorAll("input[data-admin-check-use-id]").forEach((checkbox) => {
-      checkbox.addEventListener("change", () => handleAdminUsedCheck(checkbox.dataset.adminCheckUseId, checkbox.checked));
-    });
-  }
-}
-
-function renderAdminUsedItem(item) {
-  const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
-  const pinned = item.productPinned ? " · 고정 상품" : "";
-  const checked = Boolean(item.adminChecked);
-  const checkedMeta = checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : "";
-
-  return `
-    <article class="admin-list-item${checked ? " admin-list-item-checked" : ""}">
-      <div>
-        <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}점 · 사용 ${formatDateTime(item.usedAt)} · 구매 ${formatDateTime(item.createdAt)}${escapeHtml(pinned)}${escapeHtml(checkedMeta)}</p>
-      </div>
-      <label class="admin-check-label">
-        <input type="checkbox" data-admin-check-use-id="${escapeAttribute(item.id)}"${checked ? " checked" : ""} />
-        확인
-      </label>
-    </article>
-  `;
-}
-
-async function handleAdminUsedCheck(purchaseId, checked) {
-  if (!isTeacher(currentProfile, currentUser) || !purchaseId) return;
-
-  try {
-    const purchaseRef = ref(db, `purchases/${purchaseId}`);
-    const snapshot = await get(purchaseRef);
-    if (!snapshot.exists()) return;
-
-    const purchase = snapshot.val();
-    await set(purchaseRef, {
-      ...purchase,
-      adminChecked: checked,
-      adminCheckedAt: checked ? serverTimestamp() : null,
-      adminCheckedBy: checked ? currentUser.uid : null,
-    });
-  } catch (error) {
-    setMessage(adminMessage, error.message || "사용 기록 확인 상태를 바꾸지 못했습니다.");
-  }
-}
-
 function renderProductItem(product) {
   const image = product.imageUrl
     ? `<img class="product-image" src="${escapeAttribute(product.imageUrl)}" alt="" loading="lazy" />`
-    : `<div class="product-placeholder">상품</div>`;
-  const pinnedLabel = product.pinned ? "고정 상품 · " : "";
+    : `<div class="product-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>`;
+  const pinnedLabel = product.pinned ? `<span class="pill">누구나</span>` : `<span class="pill pill-hot">한정 1개</span>`;
 
   return `
     <article class="product-card">
       ${image}
       <div class="product-body">
-        <p class="eyebrow">${pinnedLabel}${Number(product.price ?? 0)}점</p>
+        <div class="product-top">${pinnedLabel}<span class="product-price">${formatNumber(Number(product.price ?? 0))}P</span></div>
         <h3>${escapeHtml(product.title ?? "상품")}</h3>
         <p>${escapeHtml(product.description ?? "")}</p>
-        <button type="button" data-product-id="${product.id}">자세히 보기</button>
+        <button type="button" data-product-id="${escapeAttribute(product.id)}">자세히 보기</button>
       </div>
     </article>
   `;
@@ -822,14 +1080,14 @@ function openProductDialog(product) {
   const price = Number(product.price ?? 0);
   const points = Number(currentProfile?.points ?? 0);
   renderImage(dialogProductImage, product.imageUrl);
-  dialogProductPrice.textContent = `${price}점`;
+  dialogProductPrice.textContent = `${formatNumber(price)}P`;
   dialogProductTitle.textContent = product.title ?? "상품";
   dialogProductDescription.textContent = product.description ?? "";
-  dialogBalance.textContent = `현재 잔액 ${points}점`;
-  dialogAfterBalance.textContent = `구매 후 잔액 ${points - price}점`;
+  dialogBalance.textContent = `현재 잔액 ${formatNumber(points)}P`;
+  dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(points - price)}P`;
   buyProductButton.disabled = points < price || isTeacher(currentProfile, currentUser);
-  buyProductButton.textContent = points < price ? "포인트가 부족합니다" : "제품 구입";
-  setMessage(purchaseMessage, "진짜 구매하시겠습니까? 버튼을 누르면 포인트가 차감됩니다.");
+  buyProductButton.textContent = points < price ? `${formatNumber(price - points)}P 더 모아야 해요` : "구매하기";
+  setMessage(purchaseMessage, "버튼을 누르면 바로 포인트가 차감됩니다.");
   productDialog.showModal();
 }
 
@@ -877,9 +1135,9 @@ async function handlePurchase() {
         purchasedAt: serverTimestamp(),
       });
     }
-    setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${remaining}점입니다.`);
-    dialogBalance.textContent = `현재 잔액 ${remaining}점`;
-    dialogAfterBalance.textContent = `구매 후 잔액 ${remaining}점`;
+    setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${formatNumber(remaining)}P입니다.`);
+    dialogBalance.textContent = `현재 잔액 ${formatNumber(remaining)}P`;
+    dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(remaining)}P`;
     selectedProduct = null;
     setTimeout(() => {
       productDialog.close();
@@ -891,227 +1149,174 @@ async function handlePurchase() {
   }
 }
 
-async function handleAnswerSubmit(event) {
-  event.preventDefault();
-  const submitButton = answerForm.querySelector("button");
+// ── 선생님 관리 ─────────────────────────────────────────────
 
-  if (!currentUser || !currentChallengeId) {
-    setMessage(answerMessage, "로그인 후 오늘의 문제를 불러와 주세요.");
-    return;
-  }
+function subscribeAdminTools() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  $("#reward-month").value = previousMonthKey(kstMonthKey(serverNow()));
+  subscribeAdminStudents();
+  subscribeAdminProducts();
+  subscribeAdminPurchases();
+  subscribeAdminAttendance();
+}
 
-  const answer = answerInput.value.trim();
-  if (!answer) return;
+function subscribeAdminStudents() {
+  const unsubscribe = onValue(ref(db, "users"), (snapshot) => {
+    adminStudents = [];
 
-  if (!currentChallenge?.answerHash) {
-    setMessage(answerMessage, "아직 자동 채점용 정답이 등록되지 않았습니다.");
-    return;
-  }
-
-  try {
-    submitButton.disabled = true;
-    setMessage(answerMessage, "채점하는 중입니다.");
-    const submittedHash = await hashText(normalizeAnswer(answer));
-    const isCorrect = submittedHash === currentChallenge.answerHash;
-    const resultRef = ref(db, `challengeResults/${currentChallengeId}/${currentUser.uid}`);
-
-    const latestResult = await get(resultRef);
-    if (latestResult.val()?.status === "correct") {
-      answerInput.value = "";
-      setMessage(answerMessage, "이미 정답을 제출했습니다. 포인트는 더 이상 변하지 않습니다.");
-      return;
-    }
-
-    await saveSubmission(answer, isCorrect ? "correct" : "wrong");
-
-    if (!isCorrect) {
-      const penaltyResult = await applyWrongAnswerPenalty(resultRef, answer);
-      if (penaltyResult.skippedBecauseCorrect) {
-        answerInput.value = "";
-        setMessage(answerMessage, "이미 정답을 제출했습니다. 포인트는 더 이상 변하지 않습니다.");
-        return;
-      }
-      setMessage(answerMessage, `틀렸어요. ${WRONG_ANSWER_PENALTY}점이 차감되어 현재 ${penaltyResult.remainingPoints}점입니다. 답을 고쳐서 다시 제출할 수 있습니다.`);
-      return;
-    }
-
-    const reserveResult = await runTransaction(resultRef, (currentResult) => {
-      const status = currentResult?.status;
-      const awardedPoints = Number(currentResult?.awardedPoints);
-      if (status === "correct" || status === "awarding" || Number.isFinite(awardedPoints)) return;
-      return {
-        ...(currentResult ?? {}),
-        uid: currentUser.uid,
-        challengeId: currentChallengeId,
-        status: "awarding",
-        answer,
-        createdAt: currentResult?.createdAt ?? Date.now(),
-      };
-    });
-
-    if (!reserveResult.committed) {
-      const previousResult = reserveResult.snapshot.val();
-      answerInput.value = "";
-      setMessage(
-        answerMessage,
-        previousResult?.status === "awarding"
-          ? "이미 정답을 처리하는 중입니다. 잠시 후 포인트를 확인해 주세요."
-          : previousResult?.rank
-          ? `이미 정답 처리되었습니다. ${previousResult.rank}번째 정답으로 ${Number(previousResult.awardedPoints ?? 0)}점이 지급된 기록이 있습니다.`
-          : "이미 정답 처리되었습니다. 포인트는 한 번만 지급됩니다.",
-      );
-      return;
-    }
-
-    const reservedResult = reserveResult.snapshot.val();
-    let rank = Number(reservedResult?.rank ?? 0);
-    let awardedPoints = Number(reservedResult?.awardedPoints ?? NaN);
-
-    if (!rank || !Number.isFinite(awardedPoints)) {
-      const counterResult = await runTransaction(ref(db, `scoreCounters/${currentChallengeId}/correctCount`), (currentCount) => {
-        return Number(currentCount ?? 0) + 1;
+    if (snapshot.exists()) {
+      snapshot.forEach((child) => {
+        const student = child.val();
+        if (student.role === "teacher") {
+          void remove(ref(db, `leaderboardUsers/${child.key}`));
+        } else if (!isApproved(student)) {
+          void remove(ref(db, `leaderboardUsers/${child.key}`));
+        } else {
+          adminStudents.push({ id: child.key, ...student });
+          void syncLeaderboardProfile(child.key, student);
+        }
       });
-      rank = Number(counterResult.snapshot.val() ?? 1);
-      awardedPoints = Math.max(0, 150 - (rank - 1) * 5);
     }
 
-    await update(resultRef, {
-      uid: currentUser.uid,
-      challengeId: currentChallengeId,
-      status: "awarding",
-      rank,
-      awardedPoints,
-      answer,
-    });
+    adminStudents.sort((a, b) => String(a.name ?? a.email ?? "").localeCompare(String(b.name ?? b.email ?? ""), "ko-KR"));
+    renderGrantStudentOptions();
+  });
+  unsubscribers.push(unsubscribe);
+}
 
-    const pointResult = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
-      return Number(currentPoints ?? 0) + awardedPoints;
+function subscribeAdminAttendance() {
+  const today = kstDay(serverNow());
+  const unsubscribe = onValue(ref(db, `attendanceDays/${today}`), (snapshot) => {
+    const names = [];
+    snapshot.forEach((child) => {
+      names.push({ name: child.val().name ?? "학생", at: child.val().at });
     });
+    names.sort((a, b) => getTimestampValue(a.at) - getTimestampValue(b.at));
+    $("#admin-attendance-summary").textContent = names.length
+      ? `오늘 ${names.length}명이 출석했어요.`
+      : "아직 출석한 학생이 없어요.";
+    $("#admin-attendance-list").innerHTML = names
+      .map((item) => `<span class="chip">${escapeHtml(item.name)}</span>`)
+      .join("");
+  });
+  unsubscribers.push(unsubscribe);
+}
 
-    if (!pointResult.committed) {
-      throw new Error("포인트 지급에 실패했습니다. 선생님에게 보정 지급을 요청해주세요.");
+function renderGrantStudentOptions() {
+  if (!grantStudentSelect) return;
+
+  grantStudentSelect.innerHTML = adminStudents.length
+    ? `<option value="">학생을 선택하세요</option>${adminStudents.map((student) => {
+        const label = `${student.name ?? student.email ?? "학생"} (${Number(student.points ?? 0)}P)`;
+        return `<option value="${escapeAttribute(student.id)}">${escapeHtml(label)}</option>`;
+      }).join("")}`
+    : `<option value="">학생이 없습니다</option>`;
+}
+
+function subscribeAdminProducts() {
+  const productsQuery = query(ref(db, "storeProducts"), orderByChild("createdAt"), limitToLast(100));
+
+  const unsubscribe = onValue(productsQuery, (snapshot) => {
+    if (!snapshot.exists()) {
+      adminProductList.innerHTML = `<p class="empty-text">등록된 상품이 없습니다.</p>`;
+      return;
     }
 
-    const totalPoints = Number(pointResult.snapshot.val() ?? 0);
-    await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: totalPoints });
-
-    await update(resultRef, {
-      uid: currentUser.uid,
-      challengeId: currentChallengeId,
-      status: "correct",
-      rank,
-      awardedPoints,
-      answer,
-      awardedAt: serverTimestamp(),
+    const products = [];
+    snapshot.forEach((child) => {
+      const product = child.val();
+      if (product.visible !== false) products.push({ id: child.key, ...product });
     });
+    sortStoreProducts(products);
 
-    answerInput.value = "";
-    setMessage(answerMessage, `정답입니다! ${rank}번째 정답으로 ${awardedPoints}점을 받았습니다.`);
-  } catch (error) {
-    setMessage(answerMessage, error.message || authErrorMessage(error.code));
-  } finally {
-    renderChallengeAvailability();
-  }
+    adminProductList.innerHTML = products.length
+      ? products.map(renderAdminProductItem).join("")
+      : `<p class="empty-text">등록된 상품이 없습니다.</p>`;
+
+    adminProductList.querySelectorAll("button[data-delete-product-id]").forEach((button) => {
+      button.addEventListener("click", () => handleProductDelete(button.dataset.deleteProductId));
+    });
+  });
+  unsubscribers.push(unsubscribe);
 }
 
-async function applyWrongAnswerPenalty(resultRef, answer) {
-  const penaltyReservation = await runTransaction(resultRef, (currentResult) => {
-    if (currentResult?.status === "correct" || currentResult?.status === "awarding") return;
-    return {
-      ...(currentResult ?? {}),
-      uid: currentUser.uid,
-      challengeId: currentChallengeId,
-      status: "wrong",
-      answer,
-      wrongAttempts: Number(currentResult?.wrongAttempts ?? 0) + 1,
-      createdAt: currentResult?.createdAt ?? Date.now(),
-      updatedAt: Date.now(),
-    };
-  });
+function renderAdminProductItem(product) {
+  const status = product.visible === false ? "삭제 또는 판매 완료" : product.pinned ? "고정 · 판매 중" : "판매 중";
+  const disabled = product.visible === false ? " disabled" : "";
 
-  if (!penaltyReservation.committed) {
-    return { skippedBecauseCorrect: true };
-  }
-
-  const pointResult = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
-    const points = Number(currentPoints ?? 0);
-    return Math.max(0, points - WRONG_ANSWER_PENALTY);
-  });
-
-  if (!pointResult.committed) {
-    throw new Error("오답 감점에 실패했습니다. 다시 시도해 주세요.");
-  }
-
-  const remainingPoints = Number(pointResult.snapshot.val() ?? 0);
-  await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: remainingPoints });
-  return { skippedBecauseCorrect: false, remainingPoints };
+  return `
+    <article class="admin-list-item">
+      <div>
+        <p class="rank-name">${escapeHtml(product.title ?? "상품")}</p>
+        <p class="rank-meta">${Number(product.price ?? 0)}P · ${escapeHtml(status)}</p>
+      </div>
+      <button class="inline-danger-button" type="button" data-delete-product-id="${escapeAttribute(product.id)}"${disabled}>삭제</button>
+    </article>
+  `;
 }
 
-async function saveSubmission(answer, status) {
-  await set(push(ref(db, "submissions")), {
-    challengeId: currentChallengeId,
-    uid: currentUser.uid,
-    answer,
-    status,
-    createdAt: serverTimestamp(),
+function subscribeAdminPurchases() {
+  const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
+    const purchases = [];
+    snapshot.forEach((child) => {
+      purchases.push({ id: child.key, ...child.val() });
+    });
+    renderAdminPurchaseLists(purchases);
+  });
+  unsubscribers.push(unsubscribe);
+}
+
+function renderAdminPurchaseLists(purchases) {
+  const usedItems = purchases
+    .filter((item) => item.used)
+    .sort((a, b) => getTimestampValue(b.usedAt) - getTimestampValue(a.usedAt));
+
+  adminUsedList.innerHTML = usedItems.length
+    ? usedItems.map(renderAdminUsedItem).join("")
+    : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
+
+  adminUsedList.querySelectorAll("input[data-admin-check-use-id]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => handleAdminUsedCheck(checkbox.dataset.adminCheckUseId, checkbox.checked));
   });
 }
 
-async function handleChallengeSave(event) {
-  event.preventDefault();
-  if (!isTeacher(currentProfile, currentUser)) return;
+function renderAdminUsedItem(item) {
+  const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
+  const pinned = item.productPinned ? " · 고정 상품" : "";
+  const checked = Boolean(item.adminChecked);
+  const checkedMeta = checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : "";
+
+  return `
+    <article class="admin-list-item${checked ? " admin-list-item-checked" : ""}">
+      <div>
+        <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
+        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}P · 사용 ${formatDateTime(item.usedAt)} · 구매 ${formatDateTime(item.createdAt)}${escapeHtml(pinned)}${escapeHtml(checkedMeta)}</p>
+      </div>
+      <label class="admin-check-label">
+        <input type="checkbox" data-admin-check-use-id="${escapeAttribute(item.id)}"${checked ? " checked" : ""} />
+        확인
+      </label>
+    </article>
+  `;
+}
+
+async function handleAdminUsedCheck(purchaseId, checked) {
+  if (!isTeacher(currentProfile, currentUser) || !purchaseId) return;
 
   try {
-    setMessage(adminMessage, "문제를 저장하는 중입니다.");
-    const dateKey = $("#admin-challenge-date").value;
-    const title = $("#admin-challenge-title").value.trim();
-    const description = $("#admin-challenge-description").value.trim();
-    const answer = $("#admin-answer").value.trim();
-    const answerHash = answer ? await hashText(normalizeAnswer(answer)) : "";
-    const imageUrl = await getImageValue("#admin-challenge-image-url", "#admin-challenge-image-file");
+    const purchaseRef = ref(db, `purchases/${purchaseId}`);
+    const snapshot = await get(purchaseRef);
+    if (!snapshot.exists()) return;
 
-    await update(ref(db), {
-      [`dailyChallenges/${dateKey}`]: {
-        title,
-        description,
-        imageUrl,
-        answerHash,
-        correctCount: 0,
-        status: "open",
-        createdBy: currentUser.uid,
-        updatedAt: serverTimestamp(),
-      },
-      [`challengeAnswers/${dateKey}`]: {
-        answer,
-        updatedAt: serverTimestamp(),
-      },
+    const purchase = snapshot.val();
+    await set(purchaseRef, {
+      ...purchase,
+      adminChecked: checked,
+      adminCheckedAt: checked ? serverTimestamp() : null,
+      adminCheckedBy: checked ? currentUser.uid : null,
     });
-
-    challengeForm.reset();
-    $("#admin-challenge-date").value = getKoreaDateKey();
-    setMessage(adminMessage, "문제를 저장했습니다.");
   } catch (error) {
-    setMessage(adminMessage, error.message || "문제를 저장하지 못했습니다.");
-  }
-}
-
-async function handleChallengeDelete() {
-  if (!isTeacher(currentProfile, currentUser)) return;
-
-  const dateKey = $("#admin-challenge-date").value || getKoreaDateKey();
-  const ok = confirm(`${dateKey} 문제를 삭제할까요? 학생 화면에서도 사라집니다.`);
-  if (!ok) return;
-
-  try {
-    setMessage(adminMessage, "문제를 삭제하는 중입니다.");
-    await update(ref(db), {
-      [`dailyChallenges/${dateKey}`]: null,
-      [`challengeAnswers/${dateKey}`]: null,
-      [`scoreCounters/${dateKey}`]: null,
-    });
-    setMessage(adminMessage, "문제를 삭제했습니다.");
-  } catch (error) {
-    setMessage(adminMessage, error.message || "문제를 삭제하지 못했습니다.");
+    setMessage(adminMessage, error.message || "사용 기록 확인 상태를 바꾸지 못했습니다.");
   }
 }
 
@@ -1182,31 +1387,155 @@ async function handlePointGrant(event) {
 
   try {
     setMessage(adminMessage, "포인트를 지급하는 중입니다.");
-    const pointResult = await runTransaction(ref(db, `users/${studentId}/points`), (currentPoints) => {
-      return Number(currentPoints ?? 0) + amount;
-    });
-
-    if (!pointResult.committed) {
-      throw new Error("포인트 지급이 반영되지 않았습니다.");
-    }
-
-    const totalPoints = Number(pointResult.snapshot.val() ?? 0);
-    await syncLeaderboardProfile(studentId, { ...student, points: totalPoints });
-
-    await set(push(ref(db, "pointGrants")), {
-      uid: studentId,
-      studentName: student?.name ?? student?.email ?? "학생",
-      points: amount,
-      reason,
-      grantedBy: currentUser.uid,
-      createdAt: serverTimestamp(),
-    });
-
+    await grantPoints(studentId, student, amount, reason);
     pointGrantForm.reset();
-    setMessage(adminMessage, `${student?.name ?? "학생"}에게 ${amount}점을 지급했습니다.`);
+    setMessage(adminMessage, `${student?.name ?? "학생"}에게 ${amount}P를 지급했습니다.`);
   } catch (error) {
     setMessage(adminMessage, error.message || "포인트를 지급하지 못했습니다.");
   }
+}
+
+async function grantPoints(studentId, student, amount, reason) {
+  const pointResult = await runTransaction(ref(db, `users/${studentId}/points`), (currentPoints) => {
+    return Number(currentPoints ?? 0) + amount;
+  });
+
+  if (!pointResult.committed) {
+    throw new Error("포인트 지급이 반영되지 않았습니다.");
+  }
+
+  const totalPoints = Number(pointResult.snapshot.val() ?? 0);
+  await syncLeaderboardProfile(studentId, { ...student, points: totalPoints });
+
+  await set(push(ref(db, "pointGrants")), {
+    uid: studentId,
+    studentName: student?.name ?? student?.email ?? "학생",
+    points: amount,
+    reason,
+    grantedBy: currentUser.uid,
+    createdAt: serverTimestamp(),
+  });
+}
+
+async function previewMonthlyRewards() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const month = $("#reward-month").value;
+  if (!month) return;
+
+  rewardPlan = null;
+  rewardSubmitButton.disabled = true;
+  rewardSubmitButton.textContent = "보상 지급하기";
+  if (month >= kstMonthKey(serverNow())) {
+    rewardPreview.innerHTML = `<p class="empty-text">${month}은(는) 아직 끝나지 않은 달이에요. 다음 달에 지급할 수 있어요.</p>`;
+    return;
+  }
+  rewardPreview.innerHTML = `<p class="empty-text">순위를 계산하고 있어요.</p>`;
+
+  try {
+    const done = await get(ref(db, `monthlyRewards/${month}`));
+    if (done.exists()) {
+      const record = done.val();
+      const winners = Object.values(record.winners ?? {});
+      const paid = record.paid ?? {};
+      const unpaid = winners.map((item, index) => ({ ...item, index })).filter((item) => !paid[item.index]);
+      rewardPreview.innerHTML = renderRewardRows(winners.map((item, index) => ({ ...item, index })), paid);
+      rewardPreview.insertAdjacentHTML("afterbegin", `<p class="helper-text no-margin">${unpaid.length ? `지급이 중간에 멈췄어요. 남은 ${unpaid.length}건을 이어서 지급할 수 있어요.` : `이 달 보상은 이미 모두 지급했어요 (${formatDateTime(record.grantedAt)}).`}</p>`);
+      if (unpaid.length) {
+        rewardPlan = { month, plan: unpaid, resume: true };
+        rewardSubmitButton.disabled = false;
+        rewardSubmitButton.textContent = `남은 ${unpaid.length}건 지급하기`;
+      }
+      return;
+    }
+
+    const plan = [];
+    for (const difficulty of [...DIFFICULTIES].reverse()) {
+      const snapshot = await get(ref(db, `msRecords/${month}/${difficulty}`));
+      const records = [];
+      snapshot.forEach((child) => {
+        records.push({ uid: child.key, ...child.val() });
+      });
+      records.sort((a, b) => Number(a.timeMs) - Number(b.timeMs));
+      records.slice(0, 3).forEach((record, index) => {
+        plan.push({
+          uid: record.uid,
+          name: record.name ?? "학생",
+          difficulty,
+          rank: index + 1,
+          timeMs: Number(record.timeMs),
+          points: MONTHLY_REWARDS[difficulty][index],
+        });
+      });
+    }
+
+    if (!plan.length) {
+      rewardPreview.innerHTML = `<p class="empty-text">${month} 기록이 없어요.</p>`;
+      return;
+    }
+
+    plan.forEach((item, index) => {
+      item.index = index;
+    });
+    rewardPreview.innerHTML = renderRewardRows(plan, {});
+    rewardPlan = { month, plan, resume: false };
+    rewardSubmitButton.disabled = false;
+  } catch (error) {
+    rewardPreview.innerHTML = `<p class="empty-text">순위를 불러오지 못했어요. 데이터베이스 규칙을 확인해 주세요.</p>`;
+  }
+}
+
+function renderRewardRows(items, paid) {
+  return items.map((item) => `
+    <article class="admin-list-item${paid[item.index] ? " admin-list-item-checked" : ""}">
+      <div>
+        <p class="rank-name">${GAME_RULES[item.difficulty]?.label ?? ""} ${item.rank}위 · ${escapeHtml(item.name)}</p>
+        <p class="rank-meta">${formatSeconds(item.timeMs)}${paid[item.index] ? " · 지급 완료" : ""}</p>
+      </div>
+      <span class="rank-points">+${item.points}P</span>
+    </article>
+  `).join("");
+}
+
+async function handleMonthlyRewards(event) {
+  event.preventDefault();
+  if (!rewardPlan || !isTeacher(currentProfile, currentUser)) return;
+  const { month, plan, resume } = rewardPlan;
+  const total = plan.reduce((sum, item) => sum + item.points, 0);
+  if (!confirm(`${month} 순위 보상 ${plan.length}건, 총 ${total}P를 지급할까요?`)) return;
+
+  rewardSubmitButton.disabled = true;
+  try {
+    if (!resume) {
+      // 먼저 지급 계획을 저장해 두 번 지급되는 것을 막고, 중간에 멈추면 이어서 지급할 수 있게 한다.
+      await set(ref(db, `monthlyRewards/${month}`), {
+        grantedAt: serverTimestamp(),
+        grantedBy: currentUser.uid,
+        winners: plan.map(({ uid, name, difficulty, rank, timeMs, points }) => ({ uid, name, difficulty, rank, timeMs, points })),
+      });
+    }
+    for (const item of plan) {
+      const student = adminStudents.find((s) => s.id === item.uid) ?? { name: item.name };
+      await grantPoints(item.uid, student, item.points, `${month} 지뢰찾기 ${GAME_RULES[item.difficulty]?.label ?? ""} ${item.rank}위`);
+      await set(ref(db, `monthlyRewards/${month}/paid/${item.index}`), true);
+    }
+    rewardPlan = null;
+    setMessage(adminMessage, `${month} 순위 보상 ${plan.length}건을 지급했습니다.`);
+  } catch (error) {
+    setMessage(adminMessage, "보상 지급이 중간에 멈췄습니다. '순위 미리보기'를 다시 눌러 남은 보상을 이어서 지급해 주세요.");
+  }
+  await previewMonthlyRewards();
+}
+
+// ── 공통 ────────────────────────────────────────────────────
+
+async function addMyPoints(amount) {
+  const result = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
+    return Number(currentPoints ?? 0) + amount;
+  });
+  if (!result.committed) throw new Error("포인트를 반영하지 못했습니다.");
+  const total = Number(result.snapshot.val() ?? 0);
+  await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: total });
+  return total;
 }
 
 async function getImageValue(urlSelector, fileSelector) {
@@ -1239,19 +1568,17 @@ function renderImage(imageElement, imageUrl) {
   imageElement.hidden = false;
 }
 
-function normalizeAnswer(value) {
-  return String(value)
-    .trim()
-    .replace(/\s+/g, "")
-    .toLocaleLowerCase("ko-KR");
-}
-
-async function hashText(value) {
-  const bytes = new TextEncoder().encode(value);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(hashBuffer)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+function showToast(message) {
+  const toast = $("#toast");
+  toast.textContent = message;
+  toast.hidden = false;
+  toast.classList.remove("toast-show");
+  void toast.offsetWidth;
+  toast.classList.add("toast-show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 2800);
 }
 
 function isTeacher(profile, user) {
@@ -1268,13 +1595,47 @@ function normalizeLoginEmail(value) {
   return value === ADMIN_LOGIN ? ADMIN_AUTH_EMAIL : value;
 }
 
-function getKoreaDateKey() {
-  return new Intl.DateTimeFormat("en-CA", {
+function serverNow() {
+  return Date.now() + serverOffsetMs;
+}
+
+// 한국 시간 기준 날짜 번호(1970-01-01부터 며칠째). DB 규칙에서도 같은 식으로 계산한다.
+function kstDay(ms) {
+  return Math.floor((ms + KST_OFFSET_MS) / DAY_MS);
+}
+
+function previousMonthKey(monthKey) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
+}
+
+function kstMonthKey(ms) {
+  const date = new Date(ms + KST_OFFSET_MS);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatKoreanDate(ms) {
+  return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(new Date(ms));
+}
+
+function greetingByHour() {
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "numeric", hourCycle: "h23" }).format(new Date(serverNow())));
+  if (hour < 11) return "좋은 아침!";
+  if (hour < 17) return "오늘도 화이팅!";
+  return "오늘 하루 수고했어요!";
+}
+
+function formatSeconds(ms) {
+  return `${(Number(ms) / 1000).toFixed(2)}초`;
+}
+
+function formatNumber(value) {
+  return Number(value ?? 0).toLocaleString("ko-KR");
 }
 
 function formatDateTime(timestamp) {
@@ -1290,8 +1651,6 @@ function formatDateTime(timestamp) {
 function getTimestampValue(timestamp) {
   if (!timestamp) return 0;
   if (typeof timestamp === "number") return timestamp;
-  if (typeof timestamp === "string") return Number(timestamp) || 0;
-  if (typeof timestamp === "object") return Number(timestamp.timestamp ?? timestamp.seconds ?? timestamp._seconds ?? 0);
   return 0;
 }
 
@@ -1310,6 +1669,8 @@ function authErrorMessage(code) {
 function clearSubscriptions() {
   unsubscribers.forEach((unsubscribe) => unsubscribe());
   unsubscribers = [];
+  rankUnsubscribe?.();
+  rankUnsubscribe = null;
 }
 
 function setMessage(element, message) {
@@ -1322,9 +1683,9 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("'", "&#39;");
 }
 
 function escapeAttribute(value) {
-  return escapeHtml(value).replaceAll("`", "&#096;");
+  return escapeHtml(value);
 }

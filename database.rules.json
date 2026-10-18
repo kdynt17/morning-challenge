@@ -2,10 +2,12 @@
   "rules": {
     ".read": false,
     ".write": false,
-
     "users": {
       ".read": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-      ".indexOn": ["points", "email"],
+      ".indexOn": [
+        "points",
+        "email"
+      ],
       "$uid": {
         ".read": "auth != null",
         ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (!data.exists() && auth.uid == $uid && newData.child('role').val() == 'student' && newData.child('points').val() == 0 && newData.child('authEmail').val() == auth.token.email && newData.child('status').val() == 'pending') || (!data.exists() && auth.uid == $uid && auth.token.email == 'admin@admin.com' && newData.child('role').val() == 'teacher') || (data.exists() && auth.uid == $uid && newData.child('role').val() == data.child('role').val() && newData.child('authEmail').val() == data.child('authEmail').val() && newData.child('points').isNumber() && newData.child('points').val() >= 0 && ((!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') || newData.child('points').val() == data.child('points').val()) && ((!data.child('status').exists() && !newData.child('status').exists()) || newData.child('status').val() == data.child('status').val())))",
@@ -19,52 +21,16 @@
         }
       }
     },
-
-    "dailyChallenges": {
-      "$dateKey": {
-        ".read": "auth != null",
-        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')"
-      }
-    },
-
-    "challengeAnswers": {
-      "$dateKey": {
-        ".read": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')"
-      }
-    },
-
-    "submissions": {
-      "$submissionId": {
-        ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-        ".write": "auth != null && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && (!data.exists() && newData.child('uid').val() == auth.uid && (newData.child('status').val() == 'pending' || newData.child('status').val() == 'wrong' || newData.child('status').val() == 'correct'))"
-      }
-    },
-
-    "challengeResults": {
-      "$dateKey": {
-        "$uid": {
-          ".read": "auth != null",
-          ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (auth.uid == $uid && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && newData.child('uid').val() == auth.uid && (newData.child('status').val() == 'correct' || newData.child('status').val() == 'awarding' || newData.child('status').val() == 'wrong')))"
-        }
-      }
-    },
-
-    "scoreCounters": {
-      "$dateKey": {
-        ".read": "auth != null",
-        ".write": "auth != null && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved')"
-      }
-    },
-
     "storeProducts": {
       ".read": "auth != null",
-      ".indexOn": ["createdAt", "visible"],
+      ".indexOn": [
+        "createdAt",
+        "visible"
+      ],
       "$productId": {
         ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (data.exists() && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && newData.child('visible').val() == false && newData.child('purchasedBy').val() == auth.uid))"
       }
     },
-
     "purchases": {
       ".read": "auth != null",
       "$purchaseId": {
@@ -72,42 +38,101 @@
         ".write": "auth != null && ((!data.exists() && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && newData.child('uid').val() == auth.uid && newData.child('price').isNumber() && newData.child('price').val() > 0) || (data.exists() && auth.uid == data.child('uid').val() && newData.child('uid').val() == data.child('uid').val() && newData.child('productId').val() == data.child('productId').val() && newData.child('productTitle').val() == data.child('productTitle').val() && newData.child('price').val() == data.child('price').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('used').val() == true) || (data.exists() && newData.exists() && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')) || (data.exists() && !newData.exists() && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')))"
       }
     },
-
     "pointGrants": {
       "$grantId": {
         ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
         ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') && !data.exists() && newData.child('uid').isString() && newData.child('points').isNumber() && newData.child('points').val() > 0"
       }
     },
-
     "leaderboardUsers": {
       ".read": "auth != null",
-      ".indexOn": ["points"],
+      ".indexOn": [
+        "points"
+      ],
       "$uid": {
         ".write": "auth != null && ((auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved')) || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
         ".validate": "newData.hasChildren(['name', 'points', 'todayResult']) && !newData.child('role').exists() && newData.child('name').isString() && newData.child('points').isNumber() && newData.child('points').val() >= 0"
       }
     },
-
-    "challengeWinners": {
-      "$winnerId": {
-        ".read": "auth != null",
-        ".write": false
-      }
-    },
-
     "auctions": {
       ".read": "auth != null",
-      ".indexOn": ["visible", "endsAt"],
+      ".indexOn": [
+        "visible",
+        "endsAt"
+      ],
       "$auctionId": {
         ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')"
       }
     },
-
     "bids": {
       "$bidId": {
         ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
         ".write": "auth != null && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && !data.exists() && newData.child('uid').val() == auth.uid && newData.child('amount').isNumber() && newData.child('amount').val() > 0"
+      }
+    },
+    "attendance": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved'))",
+        ".validate": "newData.hasChildren(['day', 'streak', 'total']) && newData.child('day').val() == ((now + 32400000 - ((now + 32400000) % 86400000)) / 86400000) && ((!data.exists() && newData.child('total').val() == 1 && newData.child('streak').val() == 1) || (data.exists() && newData.child('day').val() > data.child('day').val() && newData.child('total').val() == data.child('total').val() + 1 && ((data.child('day').val() == newData.child('day').val() - 1 && newData.child('streak').val() == data.child('streak').val() + 1) || (data.child('day').val() != newData.child('day').val() - 1 && newData.child('streak').val() == 1))))"
+      }
+    },
+    "attendanceDays": {
+      "$day": {
+        ".read": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+        "$uid": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved')) && !data.exists() && $day == '' + ((now + 32400000 - ((now + 32400000) % 86400000)) / 86400000)",
+          ".validate": "newData.hasChildren(['name', 'at']) && newData.child('name').isString()"
+        }
+      }
+    },
+    "gameDaily": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher'))",
+        ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved'))",
+        ".validate": "newData.hasChildren(['day', 'points']) && newData.child('day').val() == ((now + 32400000 - ((now + 32400000) % 86400000)) / 86400000) && newData.child('points').isNumber() && newData.child('points').val() >= 0 && newData.child('points').val() <= 30 && (!data.exists() || data.child('day').val() != newData.child('day').val() || newData.child('points').val() >= data.child('points').val())"
+      }
+    },
+    "gameStats": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved'))"
+      }
+    },
+    "msRecords": {
+      ".read": "auth != null",
+      "$month": {
+        ".validate": "$month.matches(/^[0-9]{4}-[0-9]{2}$/)",
+        "$diff": {
+          ".indexOn": [
+            "timeMs"
+          ],
+          "$uid": {
+            ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved'))",
+            ".validate": "newData.hasChildren(['name', 'timeMs']) && newData.child('name').isString() && newData.child('timeMs').isNumber() && (($diff == 'beginner' && newData.child('timeMs').val() >= 2000) || ($diff == 'intermediate' && newData.child('timeMs').val() >= 8000) || ($diff == 'expert' && newData.child('timeMs').val() >= 25000)) && (!data.exists() || newData.child('timeMs').val() < data.child('timeMs').val())"
+          }
+        }
+      }
+    },
+    "msBest": {
+      "$uid": {
+        ".read": "auth != null",
+        "$diff": {
+          ".write": "auth != null && (auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved'))",
+          ".validate": "newData.hasChildren(['timeMs']) && newData.child('timeMs').isNumber() && (($diff == 'beginner' && newData.child('timeMs').val() >= 2000) || ($diff == 'intermediate' && newData.child('timeMs').val() >= 8000) || ($diff == 'expert' && newData.child('timeMs').val() >= 25000)) && (!data.exists() || newData.child('timeMs').val() < data.child('timeMs').val())"
+        }
+      }
+    },
+    "monthlyRewards": {
+      ".read": "auth != null",
+      "$month": {
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') && !data.exists()",
+        "paid": {
+          "$index": {
+            ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') && data.parent().parent().exists() && !data.exists() && newData.val() == true"
+          }
+        }
       }
     }
   }
