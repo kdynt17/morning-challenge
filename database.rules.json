@@ -28,14 +28,18 @@
         "visible"
       ],
       "$productId": {
-        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (data.exists() && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && newData.child('visible').val() == false && newData.child('purchasedBy').val() == auth.uid))"
+        ".write": "auth != null && ((auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') || (data.exists() && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && root.child('settings').child('storeClosed').val() != true && data.child('onSale').val() != false && (!data.child('saleEndsAt').exists() || data.child('saleEndsAt').val() > now) && newData.child('visible').val() == false && newData.child('purchasedBy').val() == auth.uid))"
       }
     },
     "purchases": {
-      ".read": "auth != null",
+      ".read": "auth != null && ((auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') || (query.orderByChild == 'uid' && query.equalTo == auth.uid))",
+      ".indexOn": [
+        "uid",
+        "createdAt"
+      ],
       "$purchaseId": {
-        ".read": "auth != null && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-        ".write": "auth != null && ((!data.exists() && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && newData.child('uid').val() == auth.uid && newData.child('price').isNumber() && newData.child('price').val() > 0) || (data.exists() && auth.uid == data.child('uid').val() && newData.child('uid').val() == data.child('uid').val() && newData.child('productId').val() == data.child('productId').val() && newData.child('productTitle').val() == data.child('productTitle').val() && newData.child('price').val() == data.child('price').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('used').val() == true) || (data.exists() && newData.exists() && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')) || (data.exists() && !newData.exists() && (data.child('uid').val() == auth.uid || auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')))"
+        ".read": "auth != null && (data.child('uid').val() == auth.uid || (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher'))",
+        ".write": "auth != null && ((!data.exists() && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && newData.child('uid').val() == auth.uid && newData.child('price').isNumber() && newData.child('price').val() > 0 && root.child('settings').child('storeClosed').val() != true && root.child('storeProducts').child(newData.child('productId').val()).exists() && root.child('storeProducts').child(newData.child('productId').val()).child('visible').val() != false && root.child('storeProducts').child(newData.child('productId').val()).child('onSale').val() != false && (!root.child('storeProducts').child(newData.child('productId').val()).child('saleEndsAt').exists() || root.child('storeProducts').child(newData.child('productId').val()).child('saleEndsAt').val() > now) && newData.child('price').val() == root.child('storeProducts').child(newData.child('productId').val()).child('price').val()) || (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher'))"
       }
     },
     "pointGrants": {
@@ -183,6 +187,10 @@
       "lockResetAt": {
         ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
         ".validate": "newData.isNumber() && newData.val() <= now"
+      },
+      "storeClosed": {
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+        ".validate": "newData.isBoolean()"
       }
     }
   }

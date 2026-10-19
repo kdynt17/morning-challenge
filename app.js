@@ -18,6 +18,7 @@ import {
 import {
   get,
   getDatabase,
+  equalTo,
   limitToLast,
   onValue,
   orderByChild,
@@ -116,6 +117,9 @@ let sessionDay = null;
 let brainMount = null;
 // 선생님이 켜면 학생은 게임을 시작할 수 없다(settings/gamesLocked).
 let gamesLocked = false;
+// 선생님이 상점을 닫으면 학생은 아무것도 살 수 없다(settings/storeClosed).
+let storeClosed = false;
+let storeProducts = [];
 
 if (setupRequired) {
   showSignedOut();
@@ -141,6 +145,7 @@ if (setupRequired) {
   productForm.addEventListener("submit", handleProductSave);
   pointGrantForm.addEventListener("submit", handlePointGrant);
   $("#game-lock-toggle").addEventListener("click", handleGameLockToggle);
+  $("#store-lock-toggle").addEventListener("click", handleStoreLockToggle);
   buyProductButton.addEventListener("click", handlePurchase);
   attendanceButton.addEventListener("click", handleAttendance);
 
@@ -752,30 +757,42 @@ function renderRankItem({ index, name, meta, value, mine }) {
 
 function subscribeStore() {
   const productsQuery = query(ref(db, "storeProducts"), orderByChild("createdAt"), limitToLast(50));
-
-  const unsubscribe = onValue(productsQuery, (snapshot) => {
-    if (!snapshot.exists()) {
-      storeList.innerHTML = `<p class="empty-text">아직 상점 상품이 없습니다.</p>`;
-      return;
-    }
-
-    const products = [];
+  unsubscribers.push(onValue(productsQuery, (snapshot) => {
+    storeProducts = [];
     snapshot.forEach((child) => {
       const product = child.val();
-      if (product.visible !== false) products.push({ id: child.key, ...product });
+      if (product.visible !== false) storeProducts.push({ id: child.key, ...product });
     });
-    sortStoreProducts(products);
+    sortStoreProducts(storeProducts);
+    renderStore();
+  }));
+  unsubscribers.push(onValue(ref(db, "settings/storeClosed"), (snapshot) => {
+    storeClosed = snapshot.val() === true;
+    renderStore();
+    renderStoreLockAdmin();
+  }, () => {}));
+  // 판매 마감 시각이 지나면 화면을 열어 둔 채로도 '판매 마감'으로 바뀌게 한다.
+  const timer = setInterval(renderStore, 30000);
+  unsubscribers.push(() => clearInterval(timer));
+}
 
-    storeList.innerHTML = products.length
-      ? products.map(renderProductItem).join("")
-      : `<p class="empty-text">지금 살 수 있는 상품이 없습니다.</p>`;
+// 지금 살 수 있는지와, 못 사면 그 이유
+function saleState(product) {
+  if (storeClosed) return { open: false, label: "상점 닫힘" };
+  if (product.onSale === false) return { open: false, label: "판매 중지" };
+  if (product.saleEndsAt && Number(product.saleEndsAt) <= serverNow()) return { open: false, label: "판매 마감" };
+  return { open: true, label: product.saleEndsAt ? `${formatDateTime(product.saleEndsAt)}까지` : "" };
+}
 
-    storeList.querySelectorAll("button[data-product-id]").forEach((button) => {
-      const product = products.find((item) => item.id === button.dataset.productId);
-      button.addEventListener("click", () => openProductDialog(product));
-    });
+function renderStore() {
+  const banner = storeClosed ? `<p class="store-closed-banner">지금은 선생님이 상점을 닫아 두었어요. 열리면 다시 살 수 있어요.</p>` : "";
+  storeList.innerHTML = banner + (storeProducts.length
+    ? storeProducts.map(renderProductItem).join("")
+    : `<p class="empty-text">아직 상점 상품이 없습니다.</p>`);
+  storeList.querySelectorAll("button[data-product-id]").forEach((button) => {
+    const product = storeProducts.find((item) => item.id === button.dataset.productId);
+    button.addEventListener("click", () => openProductDialog(product));
   });
-  unsubscribers.push(unsubscribe);
 }
 
 function sortStoreProducts(products) {
@@ -785,80 +802,44 @@ function sortStoreProducts(products) {
   });
 }
 
+// 학생은 자기 구매 내역만 읽는다(DB 규칙도 uid로 걸러 읽을 때만 허락).
 function subscribePurchaseHistory() {
-  const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
-    if (!snapshot.exists()) {
-      purchaseHistoryList.innerHTML = `<p class="empty-text">아직 구매한 상품이 없습니다.</p>`;
-      return;
-    }
-
+  const mine = query(ref(db, "purchases"), orderByChild("uid"), equalTo(currentUser.uid));
+  const unsubscribe = onValue(mine, (snapshot) => {
     const purchases = [];
     snapshot.forEach((child) => {
-      const item = child.val();
-      if (item.uid === currentUser.uid) purchases.push({ id: child.key, ...item });
+      purchases.push({ id: child.key, ...child.val() });
     });
     purchases.sort((a, b) => getTimestampValue(b.createdAt) - getTimestampValue(a.createdAt));
-
     purchaseHistoryList.innerHTML = purchases.length
       ? purchases.map(renderPurchaseHistoryItem).join("")
       : `<p class="empty-text">아직 구매한 상품이 없습니다.</p>`;
-
-    purchaseHistoryList.querySelectorAll("button[data-use-purchase-id]").forEach((button) => {
-      button.addEventListener("click", () => handlePurchaseUse(button.dataset.usePurchaseId));
-    });
+  }, () => {
+    purchaseHistoryList.innerHTML = `<p class="empty-text">구매 내역을 불러오지 못했어요.</p>`;
   });
   unsubscribers.push(unsubscribe);
 }
 
-function renderPurchaseHistoryItem(item) {
-  const used = Boolean(item.used);
-  const usedMeta = used ? ` · 사용 완료 ${formatDateTime(item.usedAt)}` : "";
+function purchaseStatus(item) {
+  if (item.refunded) return { text: "취소·환불됨", cls: "is-refunded" };
+  if (item.adminChecked) return { text: "선생님 확인", cls: "is-checked" };
+  return { text: "확인 전", cls: "" };
+}
 
+function renderPurchaseHistoryItem(item) {
+  const status = purchaseStatus(item);
   return `
     <article class="history-item">
       <div>
         <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${formatDateTime(item.createdAt)}${escapeHtml(usedMeta)}</p>
+        <p class="rank-meta">${formatDateTime(item.createdAt)}</p>
       </div>
       <div class="history-actions">
-        <span class="rank-points">-${Number(item.price ?? 0)}P</span>
-        <button class="inline-action-button" type="button" data-use-purchase-id="${escapeAttribute(item.id)}"${used ? " disabled" : ""}>${used ? "사용함" : "사용하기"}</button>
+        <span class="rank-points">${item.refunded ? "+0" : `-${Number(item.price ?? 0)}`}P</span>
+        <span class="purchase-status ${status.cls}">${status.text}</span>
       </div>
     </article>
   `;
-}
-
-async function handlePurchaseUse(purchaseId) {
-  if (!currentUser || !purchaseId) return;
-
-  const ok = confirm("이 상품을 사용하시겠습니까? 선생님께 화면을 보여주세요.");
-  if (!ok) return;
-
-  try {
-    await markPurchaseUsed(purchaseId);
-  } catch (error) {
-    setMessage(profileMessage, error.message || "구매 내역을 정리하지 못했습니다.");
-  }
-}
-
-async function markPurchaseUsed(purchaseId) {
-  const purchaseRef = ref(db, `purchases/${purchaseId}`);
-  const snapshot = await get(purchaseRef);
-
-  if (!snapshot.exists()) {
-    throw new Error("구매 내역을 찾을 수 없습니다.");
-  }
-
-  const purchase = snapshot.val();
-  if (purchase.uid !== currentUser.uid) {
-    throw new Error("본인의 구매 내역만 사용할 수 있습니다.");
-  }
-
-  await set(purchaseRef, {
-    ...purchase,
-    used: true,
-    usedAt: serverTimestamp(),
-  });
 }
 
 function renderProductItem(product) {
@@ -866,12 +847,13 @@ function renderProductItem(product) {
     ? `<img class="product-image" src="${escapeAttribute(product.imageUrl)}" alt="" loading="lazy" />`
     : `<div class="product-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>`;
   const pinnedLabel = product.pinned ? `<span class="pill">누구나</span>` : `<span class="pill pill-hot">한정 1개</span>`;
+  const sale = saleState(product);
 
   return `
-    <article class="product-card">
+    <article class="product-card${sale.open ? "" : " is-closed"}">
       ${image}
       <div class="product-body">
-        <div class="product-top">${pinnedLabel}<span class="product-price">${formatNumber(Number(product.price ?? 0))}P</span></div>
+        <div class="product-top">${pinnedLabel}${sale.label ? `<span class="pill ${sale.open ? "pill-time" : "pill-off"}">${escapeHtml(sale.label)}</span>` : ""}<span class="product-price">${formatNumber(Number(product.price ?? 0))}P</span></div>
         <h3>${escapeHtml(product.title ?? "상품")}</h3>
         <p>${escapeHtml(product.description ?? "")}</p>
         <button type="button" data-product-id="${escapeAttribute(product.id)}">자세히 보기</button>
@@ -890,9 +872,12 @@ function openProductDialog(product) {
   dialogProductDescription.textContent = product.description ?? "";
   dialogBalance.textContent = `현재 잔액 ${formatNumber(points)}P`;
   dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(points - price)}P`;
-  buyProductButton.disabled = points < price || isTeacher(currentProfile, currentUser);
-  buyProductButton.textContent = points < price ? `${formatNumber(price - points)}P 더 모아야 해요` : "구매하기";
-  setMessage(purchaseMessage, "버튼을 누르면 바로 포인트가 차감됩니다.");
+  const sale = saleState(product);
+  buyProductButton.disabled = !sale.open || points < price || isTeacher(currentProfile, currentUser);
+  buyProductButton.textContent = !sale.open ? `지금은 살 수 없어요 (${sale.label})` : points < price ? `${formatNumber(price - points)}P 더 모아야 해요` : "구매하기";
+  setMessage(purchaseMessage, sale.open
+    ? `버튼을 누르면 바로 구매되고 포인트가 차감됩니다.${product.saleEndsAt ? ` 판매 마감 ${formatDateTime(product.saleEndsAt)}` : ""}`
+    : "선생님이 판매를 멈췄거나 판매 시간이 끝났어요.");
   productDialog.showModal();
 }
 
@@ -905,7 +890,14 @@ async function handlePurchase() {
 
   const price = Number(selectedProduct.price ?? 0);
   const isPinnedProduct = Boolean(selectedProduct.pinned);
+  const sale = saleState(selectedProduct);
+  if (!sale.open) {
+    setMessage(purchaseMessage, `지금은 살 수 없어요 (${sale.label}).`);
+    buyProductButton.disabled = true;
+    return;
+  }
   buyProductButton.disabled = true;
+  let paid = false;
 
   try {
     const result = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => {
@@ -919,6 +911,7 @@ async function handlePurchase() {
       return;
     }
 
+    paid = true;
     const remaining = Number(result.snapshot.val() ?? 0);
     await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: remaining });
     await set(push(ref(db, "purchases")), {
@@ -930,9 +923,9 @@ async function handlePurchase() {
       studentEmail: currentProfile?.email ?? currentUser.email ?? "",
       price,
       remainingPoints: remaining,
-      used: false,
       createdAt: serverTimestamp(),
     });
+    paid = false;
     if (!isPinnedProduct) {
       await update(ref(db, `storeProducts/${selectedProduct.id}`), {
         visible: false,
@@ -949,7 +942,13 @@ async function handlePurchase() {
       showPage("profile");
     }, 900);
   } catch (error) {
-    setMessage(purchaseMessage, authErrorMessage(error.code));
+    // 포인트는 빠졌는데 구매 기록을 못 남겼다면(그 사이 상점이 닫힘 등) 포인트를 돌려준다.
+    if (paid) {
+      await runTransaction(ref(db, `users/${currentUser.uid}/points`), (currentPoints) => Number(currentPoints ?? 0) + price).catch(() => {});
+      setMessage(purchaseMessage, "구매하지 못했어요(상점이 닫혔거나 판매가 끝났어요). 포인트는 돌려받았어요.");
+    } else {
+      setMessage(purchaseMessage, authErrorMessage(error.code));
+    }
     buyProductButton.disabled = false;
   }
 }
@@ -1022,11 +1021,6 @@ function subscribeAdminProducts() {
   const productsQuery = query(ref(db, "storeProducts"), orderByChild("createdAt"), limitToLast(100));
 
   const unsubscribe = onValue(productsQuery, (snapshot) => {
-    if (!snapshot.exists()) {
-      adminProductList.innerHTML = `<p class="empty-text">등록된 상품이 없습니다.</p>`;
-      return;
-    }
-
     const products = [];
     snapshot.forEach((child) => {
       const product = child.val();
@@ -1041,24 +1035,94 @@ function subscribeAdminProducts() {
     adminProductList.querySelectorAll("button[data-delete-product-id]").forEach((button) => {
       button.addEventListener("click", () => handleProductDelete(button.dataset.deleteProductId));
     });
+    adminProductList.querySelectorAll("button[data-sale-product-id]").forEach((button) => {
+      button.addEventListener("click", () => handleProductSaleToggle(button.dataset.saleProductId, button.dataset.onSale === "true"));
+    });
+    adminProductList.querySelectorAll("button[data-ends-product-id]").forEach((button) => {
+      button.addEventListener("click", () => handleProductEndsSave(button.dataset.endsProductId, button.dataset.clear === "true"));
+    });
   });
   unsubscribers.push(unsubscribe);
 }
 
+// datetime-local 입력값(한국 시각)과 타임스탬프 사이 변환
+function toLocalInput(ms) {
+  if (!ms) return "";
+  const date = new Date(Number(ms) - new Date().getTimezoneOffset() * 60000);
+  return date.toISOString().slice(0, 16);
+}
+
 function renderAdminProductItem(product) {
-  const status = product.visible === false ? "삭제 또는 판매 완료" : product.pinned ? "고정 · 판매 중" : "판매 중";
-  const disabled = product.visible === false ? " disabled" : "";
+  const onSale = product.onSale !== false;
+  const ended = product.saleEndsAt && Number(product.saleEndsAt) <= serverNow();
+  const status = [product.pinned ? "누구나" : "한정 1개", onSale ? (ended ? "판매 마감" : "판매 중") : "판매 중지",
+    product.saleEndsAt ? `마감 ${formatDateTime(product.saleEndsAt)}` : ""].filter(Boolean).join(" · ");
+  const id = escapeAttribute(product.id);
 
   return `
-    <article class="admin-list-item">
+    <article class="admin-list-item admin-product-item${onSale && !ended ? "" : " is-off"}">
       <div>
         <p class="rank-name">${escapeHtml(product.title ?? "상품")}</p>
         <p class="rank-meta">${Number(product.price ?? 0)}P · ${escapeHtml(status)}</p>
+        <div class="sale-ends-row">
+          <input type="datetime-local" data-ends-input="${id}" value="${toLocalInput(product.saleEndsAt)}" aria-label="판매 마감 시각" />
+          <button class="inline-action-button" type="button" data-ends-product-id="${id}">마감 시각 저장</button>
+          ${product.saleEndsAt ? `<button class="inline-action-button" type="button" data-ends-product-id="${id}" data-clear="true">마감 없애기</button>` : ""}
+        </div>
       </div>
-      <button class="inline-danger-button" type="button" data-delete-product-id="${escapeAttribute(product.id)}"${disabled}>삭제</button>
+      <div class="admin-product-actions">
+        <button class="inline-action-button" type="button" data-sale-product-id="${id}" data-on-sale="${onSale}">${onSale ? "판매 중지" : "판매 재개"}</button>
+        <button class="inline-danger-button" type="button" data-delete-product-id="${id}">삭제</button>
+      </div>
     </article>
   `;
 }
+
+async function handleProductSaleToggle(productId, onSale) {
+  if (!isTeacher(currentProfile, currentUser) || !productId) return;
+  try {
+    await update(ref(db, `storeProducts/${productId}`), { onSale: !onSale });
+    setMessage(adminMessage, onSale ? "이 상품 판매를 멈췄어요. 학생은 살 수 없어요." : "이 상품을 다시 팔아요.");
+  } catch (error) {
+    setMessage(adminMessage, error.message || "판매 상태를 바꾸지 못했습니다.");
+  }
+}
+
+async function handleProductEndsSave(productId, clear) {
+  if (!isTeacher(currentProfile, currentUser) || !productId) return;
+  const input = adminProductList.querySelector(`[data-ends-input="${CSS.escape(productId)}"]`);
+  const value = clear ? null : input?.value ? new Date(input.value).getTime() : null;
+  if (!clear && !value) {
+    setMessage(adminMessage, "마감 날짜와 시각을 골라 주세요.");
+    return;
+  }
+  try {
+    await update(ref(db, `storeProducts/${productId}`), { saleEndsAt: value });
+    setMessage(adminMessage, clear ? "판매 마감 시각을 없앴어요." : `${formatDateTime(value)}에 판매가 끝나요.`);
+  } catch (error) {
+    setMessage(adminMessage, error.message || "마감 시각을 저장하지 못했습니다.");
+  }
+}
+
+// ── 상점 열고 닫기 ─────────────────────────────────────────
+
+function renderStoreLockAdmin() {
+  const button = $("#store-lock-toggle");
+  if (!button) return;
+  $("#store-lock-status").textContent = storeClosed ? "지금 상점이 닫혀 있어요. 학생은 아무것도 살 수 없어요." : "지금 상점이 열려 있어요.";
+  button.textContent = storeClosed ? "상점 열기" : "상점 닫기";
+}
+
+async function handleStoreLockToggle() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  try {
+    await set(ref(db, "settings/storeClosed"), !storeClosed);
+  } catch (error) {
+    setMessage(adminMessage, authErrorMessage(error.code));
+  }
+}
+
+// ── 구매 기록 (선생님) ─────────────────────────────────────
 
 function subscribeAdminPurchases() {
   const unsubscribe = onValue(ref(db, "purchases"), (snapshot) => {
@@ -1072,56 +1136,73 @@ function subscribeAdminPurchases() {
 }
 
 function renderAdminPurchaseLists(purchases) {
-  const usedItems = purchases
-    .filter((item) => item.used)
-    .sort((a, b) => getTimestampValue(b.usedAt) - getTimestampValue(a.usedAt));
+  const items = purchases.sort((a, b) => getTimestampValue(b.createdAt) - getTimestampValue(a.createdAt));
+  const waiting = items.filter((item) => !item.adminChecked && !item.refunded).length;
+  $("#admin-purchase-summary").textContent = items.length ? `전체 ${items.length}건 · 확인 전 ${waiting}건` : "";
 
-  adminUsedList.innerHTML = usedItems.length
-    ? usedItems.map(renderAdminUsedItem).join("")
-    : `<p class="empty-text">아직 사용 기록이 없습니다.</p>`;
+  adminUsedList.innerHTML = items.length
+    ? items.map(renderAdminPurchaseItem).join("")
+    : `<p class="empty-text">아직 구매 기록이 없습니다.</p>`;
 
-  adminUsedList.querySelectorAll("input[data-admin-check-use-id]").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => handleAdminUsedCheck(checkbox.dataset.adminCheckUseId, checkbox.checked));
+  adminUsedList.querySelectorAll("button[data-check-purchase-id]").forEach((button) => {
+    button.addEventListener("click", () => handleAdminPurchaseCheck(button.dataset.checkPurchaseId, button.dataset.checked !== "true"));
+  });
+  adminUsedList.querySelectorAll("button[data-refund-purchase-id]").forEach((button) => {
+    button.addEventListener("click", () => handleAdminRefund(button.dataset.refundPurchaseId));
   });
 }
 
-function renderAdminUsedItem(item) {
+function renderAdminPurchaseItem(item) {
   const buyer = item.studentName ?? item.studentEmail ?? item.uid ?? "학생";
-  const pinned = item.productPinned ? " · 고정 상품" : "";
   const checked = Boolean(item.adminChecked);
-  const checkedMeta = checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : "";
+  const status = purchaseStatus(item);
+  const id = escapeAttribute(item.id);
 
   return `
-    <article class="admin-list-item${checked ? " admin-list-item-checked" : ""}">
+    <article class="admin-list-item${checked ? " admin-list-item-checked" : ""}${item.refunded ? " is-off" : ""}">
       <div>
-        <p class="rank-name">${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${escapeHtml(buyer)} · ${Number(item.price ?? 0)}P · 사용 ${formatDateTime(item.usedAt)} · 구매 ${formatDateTime(item.createdAt)}${escapeHtml(pinned)}${escapeHtml(checkedMeta)}</p>
+        <p class="rank-name">${escapeHtml(buyer)} · ${escapeHtml(item.productTitle ?? "상품")}</p>
+        <p class="rank-meta">${Number(item.price ?? 0)}P · 구매 ${formatDateTime(item.createdAt)}${checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : ""} · <span class="purchase-status ${status.cls}">${status.text}</span></p>
       </div>
-      <label class="admin-check-label">
-        <input type="checkbox" data-admin-check-use-id="${escapeAttribute(item.id)}"${checked ? " checked" : ""} />
-        확인
-      </label>
+      <div class="admin-product-actions">
+        ${item.refunded ? "" : `<button class="inline-action-button${checked ? " is-on" : ""}" type="button" data-check-purchase-id="${id}" data-checked="${checked}">${checked ? "확인함 ✓" : "확인"}</button>
+        <button class="inline-danger-button" type="button" data-refund-purchase-id="${id}">취소·환불</button>`}
+      </div>
     </article>
   `;
 }
 
-async function handleAdminUsedCheck(purchaseId, checked) {
+async function handleAdminPurchaseCheck(purchaseId, checked) {
   if (!isTeacher(currentProfile, currentUser) || !purchaseId) return;
-
   try {
-    const purchaseRef = ref(db, `purchases/${purchaseId}`);
-    const snapshot = await get(purchaseRef);
-    if (!snapshot.exists()) return;
-
-    const purchase = snapshot.val();
-    await set(purchaseRef, {
-      ...purchase,
+    await update(ref(db, `purchases/${purchaseId}`), {
       adminChecked: checked,
       adminCheckedAt: checked ? serverTimestamp() : null,
       adminCheckedBy: checked ? currentUser.uid : null,
     });
   } catch (error) {
-    setMessage(adminMessage, error.message || "사용 기록 확인 상태를 바꾸지 못했습니다.");
+    setMessage(adminMessage, error.message || "확인 상태를 바꾸지 못했습니다.");
+  }
+}
+
+// 마음에 안 드는 구매는 취소하고 포인트를 학생에게 돌려준다.
+async function handleAdminRefund(purchaseId) {
+  if (!isTeacher(currentProfile, currentUser) || !purchaseId) return;
+  try {
+    const purchaseRef = ref(db, `purchases/${purchaseId}`);
+    const purchase = (await get(purchaseRef)).val();
+    if (!purchase || purchase.refunded) return;
+    const price = Number(purchase.price ?? 0);
+    if (!confirm(`${purchase.studentName ?? "학생"}의 '${purchase.productTitle ?? "상품"}' 구매를 취소하고 ${price}P를 돌려줄까요?`)) return;
+    // 먼저 취소 표시를 해 두 번 환불되지 않게 한다.
+    const marked = await runTransaction(purchaseRef, (current) => (current && !current.refunded ? { ...current, refunded: true, refundedAt: Date.now(), refundedBy: currentUser.uid } : undefined));
+    if (!marked.committed) return;
+    const points = await runTransaction(ref(db, `users/${purchase.uid}/points`), (currentPoints) => Number(currentPoints ?? 0) + price);
+    const student = (await get(ref(db, `users/${purchase.uid}`))).val();
+    if (student) await syncLeaderboardProfile(purchase.uid, { ...student, points: points.snapshot.val() });
+    setMessage(adminMessage, `구매를 취소하고 ${price}P를 돌려줬어요.`);
+  } catch (error) {
+    setMessage(adminMessage, error.message || "환불하지 못했습니다.");
   }
 }
 
@@ -1136,6 +1217,8 @@ async function handleProductSave(event) {
     const price = Number($("#admin-product-price").value);
     const pinned = $("#admin-product-pinned").checked;
     const imageUrl = await getImageValue("#admin-product-image-url", "#admin-product-image-file");
+    const endsValue = $("#admin-product-ends").value;
+    const saleEndsAt = endsValue ? new Date(endsValue).getTime() : null;
 
     await set(push(ref(db, "storeProducts")), {
       title,
@@ -1144,6 +1227,8 @@ async function handleProductSave(event) {
       pinned,
       imageUrl,
       visible: true,
+      onSale: true,
+      ...(saleEndsAt ? { saleEndsAt } : {}),
       createdBy: currentUser.uid,
       createdAt: serverTimestamp(),
     });

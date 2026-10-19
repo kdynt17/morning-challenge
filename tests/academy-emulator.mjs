@@ -81,10 +81,30 @@ try{
     await assert.rejects(db.ref('attendance/bob').set({day:today,streak:5,total:10}));
   }
   assert.equal((await root.ref('wallets').get()).exists(),false);
+  // 상점: 학생은 자기 구매만 읽고, 상점 닫힘·판매 중지·판매 마감·가격 조작이면 구매 기록을 남길 수 없다.
+  await root.ref('storeProducts').set({reroll:{title:'자리 리롤권',price:10,pinned:true,visible:true,createdAt:1},clean:{title:'청소 면제권',price:30,pinned:true,visible:true,onSale:false,createdAt:2},seat:{title:'자리 변경권',price:20,pinned:false,visible:true,saleEndsAt:Date.now()-1000,createdAt:3}});
+  await root.ref('purchases/other').set({uid:'amy',productId:'reroll',productTitle:'자리 리롤권',price:10,createdAt:1});
+  const buy=(id,productId,price)=>db.ref(`purchases/${id}`).set({uid:'bob',productId,productTitle:'x',price,createdAt:Date.now()});
+  await buy('p1','reroll',10);
+  await assert.rejects(buy('p2','reroll',1));
+  await assert.rejects(buy('p3','clean',30));
+  await assert.rejects(buy('p4','seat',20));
+  await root.ref('settings/storeClosed').set(true);
+  await assert.rejects(buy('p5','reroll',10));
+  await root.ref('settings/storeClosed').set(false);
+  const mine=await db.ref('purchases').orderByChild('uid').equalTo('bob').get();
+  assert.deepEqual(Object.keys(mine.val()),['p1']);
+  await assert.rejects(db.ref('purchases').get());
+  await assert.rejects(db.ref('purchases/p1/adminChecked').set(true));
+  await assert.rejects(db.ref('settings/storeClosed').set(true));
+  const teacherDb2=getDatabase(teacherApp);
+  await teacherDb2.ref('purchases/p1').update({adminChecked:true});
+  await teacherDb2.ref('settings/storeClosed').set(false);
+  assert.equal(Object.keys((await teacherDb2.ref('purchases').get()).val()).length,2);
   // 관리자 계정(admin@admin.com)은 처음 로그인할 때 자기 선생님 프로필을 만들고 학생 목록을 읽을 수 있다.
   const teacherDb=getDatabase(teacherApp);
   await teacherDb.ref('users/teach').set({name:'선생님',email:'admin@admin',authEmail:'admin@admin.com',role:'teacher',points:0,todayResult:'-',createdAt:Date.now()});
   assert.ok((await teacherDb.ref('users').get()).child('bob').exists());
   await teacherDb.ref('leaderboardUsers/teach').remove();
-  console.log(`PASS: admin profile bootstrap, lock mid-challenge restarts from the beginning, 15 games, practice replacement + 15s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
+  console.log(`PASS: store close/stop/end-time/price guards, own-purchase reads, admin profile bootstrap, lock mid-challenge restarts from the beginning, 15 games, practice replacement + 15s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
 }finally{client.stop();await Promise.all([admin,app,teacherApp].map(deleteApp));}

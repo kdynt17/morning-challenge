@@ -13,7 +13,7 @@ export const initializeApp=()=>({}),initializeAuth=()=>({}),getDatabase=()=>({})
 export const indexedDBLocalPersistence={},browserLocalPersistence={},browserSessionPersistence={};
 export const onAuthStateChanged=(_,fn)=>{queueMicrotask(()=>fn({uid:'tester',email:'test@example.test'}));return()=>{};};
 export const setPersistence=async()=>{},sendPasswordResetEmail=async()=>{},signInWithEmailAndPassword=async()=>{},signOut=async()=>{},createUserWithEmailAndPassword=async()=>{},updateProfile=async()=>{};
-export const ref=(_,p)=>p,query=(p)=>p,orderByChild=()=>null,limitToFirst=()=>null,limitToLast=()=>null;
+export const ref=(_,p)=>p,query=(p)=>p,orderByChild=()=>null,limitToFirst=()=>null,limitToLast=()=>null,equalTo=()=>null;
 export const get=async p=>snap(val(p));
 export const onValue=(p,fn)=>{queueMicrotask(()=>fn(snap(p==='.info/serverTimeOffset'?0:val(p))));return()=>{};};
 export const set=async(p,v)=>put(p,v),remove=async p=>put(p,null),update=async()=>{},push=p=>p+'/test',serverTimestamp=()=>Date.now();
