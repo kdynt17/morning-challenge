@@ -1975,3 +1975,55 @@ img {
 .result-stats dd small { display: block; font-size: 12px; color: #e8403f; }
 .practice-result .btn { width: 100%; margin-top: 8px; }
 .my-best { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #fff3b0; font-family: var(--body, inherit); font-size: 12px; font-weight: 700; }
+
+/* 정답/오답 팝업: 가운데에서 뿅 → 잠깐 멈춤 → 위로 슝 날아가며 사라짐 */
+.answer-pop {
+  position: fixed;
+  top: 42%;
+  left: 50%;
+  z-index: 80;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 170px;
+  padding: 16px 26px 14px;
+  border: 4px solid var(--ink);
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 8px 0 rgba(59, 47, 37, 0.3);
+  font-family: var(--display);
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.3);
+}
+.answer-pop b { font-size: 44px; font-weight: 400; }
+.answer-pop span { font-size: 38px; -webkit-text-stroke: 1.5px #fff; paint-order: stroke fill; }
+.answer-pop.is-ok { background: #fffbe6; color: #e8403f; }
+.answer-pop.is-ok span { color: var(--green-dark); }
+.answer-pop.is-bad { background: #eef4ff; color: #2f6fe8; }
+.answer-pop.is-bad span { color: #e8403f; }
+.answer-pop.is-show { animation: answer-pop 0.9s cubic-bezier(.2, .9, .3, 1) both; }
+.answer-pop.is-bad.is-show { animation: answer-pop-bad 0.9s ease-out both; }
+@keyframes answer-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3) rotate(-10deg); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.18) rotate(3deg); }
+  30% { transform: translate(-50%, -50%) scale(1) rotate(0); }
+  60% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -260%) scale(0.6); }
+}
+@keyframes answer-pop-bad {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  24% { transform: translate(-56%, -50%) scale(1); }
+  32% { transform: translate(-44%, -50%); }
+  40% { transform: translate(-53%, -50%); }
+  48% { transform: translate(-50%, -50%); }
+  65% { opacity: 1; transform: translate(-50%, -50%); }
+  100% { opacity: 0; transform: translate(-50%, 40%) scale(0.85); }
+}
+.score-badge.is-drop { animation: drop-shake 0.4s ease-out; }
+@keyframes drop-shake { 25% { transform: translateX(-5px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+.score-delta.is-show { animation: delta-up 0.8s ease-out; }
+.score-delta.is-bad.is-show { animation: delta-down 0.8s ease-out; }
+@keyframes delta-down { 0% { opacity: 0; transform: translateY(-6px) scale(0.6); } 25% { opacity: 1; transform: translateY(4px) scale(1.2); } 100% { opacity: 0; transform: translateY(26px) scale(1); } }

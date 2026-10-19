@@ -278,7 +278,7 @@ export function mountBrain({ app, db, user, root }) {
         </header>
         <p class="game-help">${esc(game.help)}</p>
         <div class="timer-row"><div class="timer-bar"><i id="brain-bar"></i></div><strong id="brain-time">${seconds(roundMs(game.id))}</strong></div>
-        <div class="q-area"><div id="brain-question"></div><span id="brain-stamp" class="stamp" aria-hidden="true"><b></b><small></small></span></div>
+        <div class="q-area"><div id="brain-question"></div></div>
         <p id="brain-feedback" class="feedback" role="status"></p>
         <button id="brain-save" class="btn btn-go" type="button" hidden>결과 저장 다시 시도</button>
         <p class="fine">${session.mode === 'daily' ? '나가도 시간은 계속 흘러요. 다시 들어오면 이어서 해요.' : '나가면 이번 연습은 저장되지 않아요.'} 맞혀야 다음 단계로! 틀리면 -${WRONG_PENALTY}점.</p>
@@ -312,6 +312,36 @@ export function mountBrain({ app, db, user, root }) {
   const onPop = () => { if (session && !session.done && window.history.state?.brainPlay !== session.id) exitGame(); };
   window.addEventListener('popstate', onPop);
 
+  // 정답/오답 팝업: 화면 가운데에 '뿅' 나타났다가 점수와 함께 위로 '슝' 날아가며 사라진다.
+  // 페이지 애니메이션의 영향을 받지 않도록 body에 붙인 고정 위치 요소를 쓴다.
+  const pop = document.createElement('div');
+  pop.className = 'answer-pop'; pop.setAttribute('aria-live', 'polite');
+  document.body.append(pop);
+  function popAnswer(ok, delta) {
+    pop.className = `answer-pop ${ok ? 'is-ok' : 'is-bad'}`;
+    pop.innerHTML = `<b>${ok ? '정답!' : '땡!'}</b><span>${delta >= 0 ? '+' : '−'}${fmt(Math.abs(delta))}</span>`;
+    void pop.offsetWidth; pop.classList.add('is-show');
+    const deltaEl = root.querySelector('#brain-delta');
+    if (deltaEl) { deltaEl.textContent = `${delta >= 0 ? '+' : '−'}${Math.abs(delta)}`; deltaEl.className = `score-delta ${ok ? 'is-ok' : 'is-bad'}`; void deltaEl.offsetWidth; deltaEl.classList.add('is-show'); }
+    const badge = root.querySelector('.score-badge');
+    if (badge) { badge.classList.remove('is-bump', 'is-drop'); void badge.offsetWidth; badge.classList.add(ok ? 'is-bump' : 'is-drop'); }
+    clearTimeout(feedbackTimer);
+    feedbackTimer = setTimeout(() => pop.classList.remove('is-show'), 900);
+  }
+  // 점수판 숫자가 이전 점수에서 새 점수까지 '촤라락' 굴러간다.
+  let rolling = 0;
+  function rollScore(from, to) {
+    const el = root.querySelector('#brain-score'); if (!el) return;
+    cancelAnimationFrame(rolling);
+    const startAt = performance.now(), ms = 450;
+    const step = (t) => {
+      const k = Math.min(1, (t - startAt) / ms), eased = 1 - (1 - k) ** 3;
+      el.textContent = fmt(Math.round(from + (to - from) * eased));
+      rolling = k < 1 ? requestAnimationFrame(step) : 0;
+    };
+    rolling = requestAnimationFrame(step);
+  }
+
   function saveLocal() { try { localStorage.setItem(storageKey(), JSON.stringify({ events, questionAt })); } catch { /* 저장소를 못 쓰면 메모리로만 진행 */ } }
   // 맞힌 개수(step)로 다음 문제의 난이도를 정한다. 틀리면 단계가 그대로다.
   const roundSeed = () => `${session.seed}:${session.stage}`;
@@ -328,7 +358,7 @@ export function mountBrain({ app, db, user, root }) {
     timeEl.textContent = wait > 0 ? `${Math.ceil(wait / 1000)}` : `${Math.ceil(remaining / 1000)}`;
     root.querySelector('#brain-bar').style.width = `${wait > 0 ? 100 : (remaining / limit) * 100}%`;
     root.querySelector('#brain-bar').classList.toggle('is-hurry', wait <= 0 && remaining < 10000);
-    root.querySelector('#brain-score').textContent = fmt(scoreRound(session.games[session.stage], `${session.seed}:${session.stage}`, events).score);
+    if (!rolling) root.querySelector('#brain-score').textContent = fmt(scoreRound(session.games[session.stage], `${session.seed}:${session.stage}`, events).score);
     if (wait > 0) {
       if (lastPaint === 'wait') return;
       lastPaint = 'wait';
@@ -369,23 +399,9 @@ export function mountBrain({ app, db, user, root }) {
   function answer(values) {
     const at = now() - session.startedAt; if (now() < questionAt + Math.max(180, q.preview) || at > roundMs(session.games[session.stage])) return;
     const before = progress().score, ok = isCorrect(q, values); events.push({ at, selected: [...values] });
-    const delta = progress().score - before;
-    const feedback = root.querySelector('#brain-feedback');
-    feedback.textContent = ok ? '정답!' : `땡! ${delta ? `${delta}점` : ''} 같은 단계 다시 도전!`;
-    feedback.className = `feedback ${ok ? 'is-ok' : 'is-bad'}`;
-    // 가운데 큰 도장(O/X + 점수)과 점수판 옆에 +/− 점수가 뿅 튀어 오른다.
-    const stampEl = root.querySelector('#brain-stamp');
-    stampEl.className = `stamp ${ok ? 'is-ok' : 'is-bad'}`;
-    stampEl.querySelector('b').textContent = ok ? '정답!' : '땡!';
-    stampEl.querySelector('small').textContent = `${delta >= 0 ? '+' : ''}${delta}`;
-    const deltaEl = root.querySelector('#brain-delta');
-    deltaEl.textContent = `${delta >= 0 ? '+' : ''}${delta}`;
-    deltaEl.className = `score-delta ${ok ? 'is-ok' : 'is-bad'}`;
-    void stampEl.offsetWidth;
-    stampEl.classList.add('is-show'); deltaEl.classList.add('is-show');
-    root.querySelector('.score-badge')?.classList.toggle('is-bump', true);
-    clearTimeout(feedbackTimer);
-    feedbackTimer = setTimeout(() => { stampEl.classList.remove('is-show'); deltaEl.classList.remove('is-show'); root.querySelector('.score-badge')?.classList.remove('is-bump'); }, 650);
+    const after = progress().score, delta = after - before;
+    popAnswer(ok, delta);
+    rollScore(before, after);
     questionAt = now() + (ok ? 0 : WRONG_COOLDOWN); nextQuestion();
   }
 
@@ -413,7 +429,7 @@ export function mountBrain({ app, db, user, root }) {
     const next = dayKey(now());
     if (next !== day) { day = next; session = null; showResult = false; clearInterval(gameClock); errorText = '오전 6시, 새로운 두뇌 체조가 열렸어요!'; watchDay(); dashboard(); transport.settle().catch((e) => { error(e); dashboard(); }); }
   }, 1000);
-  const dispose = () => { disposed = true; window.removeEventListener('popstate', onPop); document.removeEventListener('keydown', onKey); document.querySelector('.guide-overlay')?.remove(); transport.stop(); subscriptions.forEach((f) => f()); daySub?.(); sessionSub?.(); clearInterval(clock); clearInterval(gameClock); root.innerHTML = ''; };
+  const dispose = () => { disposed = true; pop.remove(); cancelAnimationFrame(rolling); window.removeEventListener('popstate', onPop); document.removeEventListener('keydown', onKey); document.querySelector('.guide-overlay')?.remove(); transport.stop(); subscriptions.forEach((f) => f()); daySub?.(); sessionSub?.(); clearInterval(clock); clearInterval(gameClock); root.innerHTML = ''; };
   dispose.exit = exitGame;
   return dispose;
 }
