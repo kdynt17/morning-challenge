@@ -1,5 +1,5 @@
 import {ref,get,set,runTransaction,onValue} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
-import {dayKey,closesAt,lineup,GAMES,roundMs,areaPoints,scoreRound,rankings,dailyReward} from './functions/domain.mjs';
+import {dayKey,closesAt,lineup,GAMES,roundMs,areaPoints,scoreRound,rankings,dailyReward,interruptedByLock} from './functions/domain.mjs';
 
 // Spark classroom edition. Awards and retry markers share the original student balance transaction.
 // Like the original app, this trusts approved students; it is not server-side anti-cheat.
@@ -55,13 +55,17 @@ export function freeClient(db,user){
       await settle();
       if(input.mode==='practice'&&!(await get(ref(db,`academy/sessions/${user.uid}/${dailyKey}/done`))).val())throw Error('오늘 챌린지를 먼저 완료해주세요.');
       // 연습은 누를 때마다 새 판이다. 하다 만 연습은 버리고, 보상은 영역별 하루 한 번(practiceMask)만 준다.
-      if(!s||input.mode==='practice'){
+      // 오늘의 도전 중에 선생님이 게임을 잠갔다면, 잠금 뒤에는 처음부터 다시 시작한다.
+      const lockResetAt=Number((await get(ref(db,'settings/lockResetAt'))).val()||0);
+      const interrupted=s=>interruptedByLock(s,lockResetAt);
+      if(!s||input.mode==='practice'||interrupted(s)){
         if(input.mode==='daily'&&endAt-time<325000)throw Error('오전 6시 갱신 후 도전해주세요.');
         const game=GAMES.find(g=>g.id===input.game);
         if(input.mode==='practice'&&!game)throw Error('게임을 선택해주세요.');
-        const id=input.mode==='daily'?day:crypto.randomUUID();
-        const candidate={id,mode:input.mode,day,endAt,games:input.mode==='daily'?lineup(day):[game.id],seed:input.mode==='daily'?day:id,category:game?.category??0,stage:0,startedAt:time,total:0,done:false};
-        await runTransaction(path,current=>!current||input.mode==='practice'?candidate:undefined,{applyLocally:false});
+        // 다시 시작한 도전은 id가 달라야 예전 진행 기록(브라우저 저장)이 섞이지 않는다.
+        const id=input.mode==='daily'?(interrupted(s)?`${day}-${time}`:day):crypto.randomUUID();
+        const candidate={id,mode:input.mode,day,endAt,games:input.mode==='daily'?lineup(day):[game.id],seed:input.mode==='daily'?day:id,category:game?.category??0,stage:0,startedAt:time,createdAt:time,total:0,done:false};
+        await runTransaction(path,current=>!current||input.mode==='practice'||interrupted(current)?candidate:undefined,{applyLocally:false});
         s=(await get(path)).val();
       }
     }else if(input.action==='finish'){

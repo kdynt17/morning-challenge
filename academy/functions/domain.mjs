@@ -29,6 +29,12 @@ export function dayKey(now = Date.now()) { return new Date(now + 3 * 3600000).to
 export function closesAt(day) { return Date.parse(day + 'T21:00:00Z'); }
 // 하루 도전 순위 보상: 1등 100P부터 한 등수마다 5P씩 줄고, 17등부터는 기본 20P.
 export function dailyReward(rank) { return Number.isInteger(rank) && rank > 0 ? Math.max(20, 100 - 5 * (rank - 1)) : 20; }
+// 선생님이 게임을 잠근 시각(lockResetAt) 전에 시작해서 아직 안 끝난 오늘의 도전은 처음부터 다시 한다.
+// createdAt이 없는 예전 기록은 단계 시작 시각(쉬는 5초 포함 6초 여유)으로 판단한다.
+export function interruptedByLock(s, lockResetAt) {
+  if (!s || s.mode !== 'daily' || s.done || !lockResetAt) return false;
+  return (Number.isFinite(s.createdAt) ? s.createdAt : s.startedAt - 6000) < lockResetAt;
+}
 export function rng(seed) {
   let n = 2166136261;
   for (const c of String(seed)) n = Math.imul(n ^ c.charCodeAt(0), 16777619);

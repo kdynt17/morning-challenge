@@ -124,3 +124,14 @@ test('wrong answers cost points, keep the level, and calc repeats the same probl
   // 계산은 틀리면 같은 문제
   assert.equal(question('calc', seed, 0, 4).prompt, question('calc', seed, 1, 4).prompt);
 });
+
+test('a teacher lock restarts only an unfinished daily challenge started before the lock', async () => {
+  const { interruptedByLock } = await import('../academy/functions/domain.mjs');
+  const s = { mode: 'daily', done: false, createdAt: 1000, startedAt: 50000 };
+  assert.equal(interruptedByLock(s, 2000), true);
+  assert.equal(interruptedByLock(s, 500), false);
+  assert.equal(interruptedByLock({ ...s, done: true }, 2000), false);
+  assert.equal(interruptedByLock({ ...s, mode: 'practice' }, 2000), false);
+  assert.equal(interruptedByLock(s, 0), false);
+  assert.equal(interruptedByLock({ mode: 'daily', done: false, startedAt: 7000 }, 2000), true);
+});

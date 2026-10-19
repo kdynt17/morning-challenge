@@ -16,6 +16,26 @@ try{
   await root.ref('users/bob').set({name:'테스트 학생',role:'student',points:20,email:'b@test.test',authEmail:'b@test.test'});
   const day=dayKey(),end=closesAt(day);
   let res=await client.action({action:'start',mode:'daily'});assert.equal(res.data.session.stage,0);
+  // 도전 중에 선생님이 게임을 잠그면: 잠긴 동안은 시작 불가, 풀리면 처음부터 새 도전
+  const firstId=res.data.session.id,teacherSettings=getDatabase(teacherApp).ref('settings');
+  await root.ref(`academy/sessions/bob/${end}/startedAt`).set(Date.now()-65000);
+  res=await client.action({action:'finish',mode:'daily',day,sessionId:firstId,stage:0,events:[]});assert.equal(res.data.session.stage,1);
+  await new Promise(r=>setTimeout(r,30));
+  await teacherSettings.update({gamesLocked:true,lockResetAt:Date.now()-10});
+  await assert.rejects(client.action({action:'start',mode:'daily'}));
+  await teacherSettings.update({gamesLocked:false});
+  res=await client.action({action:'start',mode:'daily'});
+  assert.equal(res.data.session.stage,0);assert.notEqual(res.data.session.id,firstId);
+  // 다시 시작한 뒤에는 이어서 하기(또 초기화되지 않음)
+  assert.equal((await client.action({action:'start',mode:'daily'})).data.session.id,res.data.session.id);
+  // 이번 업데이트 전에 만든(createdAt 없는) 진행 중 기록도 계속 이어서 끝낼 수 있다
+  const legacy=(await db.ref(`academy/sessions/bob/${end}`).get()).val();delete legacy.createdAt;
+  await root.ref(`academy/sessions/bob/${end}`).set({...legacy,startedAt:Date.now()-65000});
+  res=await client.action({action:'finish',mode:'daily',day,sessionId:legacy.id,stage:0,events:[]});assert.equal(res.data.session.stage,1);
+  await root.ref(`academy/sessions/bob/${end}`).set({...res.data.session,createdAt:Date.now(),stage:0,total:0,results:null});
+  res={data:{session:(await db.ref(`academy/sessions/bob/${end}`).get()).val()}};
+  // 학생은 잠금 시각을 바꿀 수 없다
+  await assert.rejects(db.ref('settings/lockResetAt').set(Date.now()-5));
   for(let stage=0;stage<5;stage++){
     await root.ref(`academy/sessions/bob/${end}/startedAt`).set(Date.now()-65000);
     res=await client.action({action:'finish',mode:'daily',day,sessionId:res.data.session.id,stage,events:[]});
@@ -66,5 +86,5 @@ try{
   await teacherDb.ref('users/teach').set({name:'선생님',email:'admin@admin',authEmail:'admin@admin.com',role:'teacher',points:0,todayResult:'-',createdAt:Date.now()});
   assert.ok((await teacherDb.ref('users').get()).child('bob').exists());
   await teacherDb.ref('leaderboardUsers/teach').remove();
-  console.log(`PASS: admin profile bootstrap, 15 games, practice replacement + 20s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
+  console.log(`PASS: admin profile bootstrap, lock mid-challenge restarts from the beginning, 15 games, practice replacement + 20s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
 }finally{client.stop();await Promise.all([admin,app,teacherApp].map(deleteApp));}

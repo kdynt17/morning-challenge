@@ -513,7 +513,7 @@ function subscribeGameLock() {
     if (!changed || isTeacher(currentProfile, currentUser)) return;
     if (locked) {
       brainMount?.exit?.();
-      showToast("선생님이 게임을 잠갔어요.");
+      showToast("선생님이 게임을 잠갔어요. 하던 오늘의 도전은 잠금이 풀리면 처음부터 다시 해요.");
     }
     mountAcademy();
   }, () => {});
@@ -524,7 +524,7 @@ function renderGameLockAdmin() {
   const button = $("#game-lock-toggle");
   if (!button) return;
   $("#game-lock-status").textContent = gamesLocked
-    ? "지금 학생들은 게임을 할 수 없어요."
+    ? "지금 학생들은 게임을 할 수 없어요. 잠글 때 오늘의 도전을 하던 학생은 풀린 뒤 처음부터 다시 해요."
     : "지금 학생들은 게임을 할 수 있어요.";
   button.textContent = gamesLocked ? "게임 잠금 풀기" : "게임 잠그기";
 }
@@ -532,7 +532,8 @@ function renderGameLockAdmin() {
 async function handleGameLockToggle() {
   if (!isTeacher(currentProfile, currentUser)) return;
   try {
-    await set(ref(db, "settings/gamesLocked"), !gamesLocked);
+    // 잠글 때 시각을 남긴다. 그때 오늘의 도전을 하던 학생은 잠금이 풀린 뒤 처음부터 다시 한다.
+    await update(ref(db, "settings"), gamesLocked ? { gamesLocked: false } : { gamesLocked: true, lockResetAt: serverTimestamp() });
   } catch (error) {
     setMessage(adminMessage, authErrorMessage(error.code));
   }

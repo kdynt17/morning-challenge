@@ -1,6 +1,6 @@
 import { freeClient } from './free-client.js';
 import { ref, onValue } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
-import { GAMES, CATEGORIES, roundMs, dailyReward, WRONG_PENALTY, WRONG_COOLDOWN, dayKey, closesAt, lineup, rankings, question, isCorrect, scoreRound } from './functions/domain.mjs';
+import { GAMES, CATEGORIES, roundMs, dailyReward, interruptedByLock, WRONG_PENALTY, WRONG_COOLDOWN, dayKey, closesAt, lineup, rankings, question, isCorrect, scoreRound } from './functions/domain.mjs';
 import { renderQuestion } from './game-art.js';
 import { AREAS, AREA_REFERENCE, GRADES, asset, dailyBrain, profileBrain, radarPoints } from './brain-score.js';
 
@@ -88,6 +88,8 @@ export function mountBrain({ app, db, user, root }) {
   let subscriptions = [], daySub, clock, gameClock, lastPaint = '', errorText = '', showTop10 = false, openGame = null, showResult = false, feedbackTimer = null;
   // 연습 한 판이 끝나면 보여줄 결과(점수·정답·오답·내 최고 기록)
   let practiceResult = null, bestBefore = 0;
+  // 선생님이 게임을 잠근 시각. 그 전에 하다 만 오늘의 도전은 처음부터 다시 한다.
+  let lockResetAt = 0;
   const now = () => Date.now() + offset;
   const storageKey = () => `brain:${user.uid}:${session.id}:${session.stage}`;
   const error = (e) => { errorText = e?.message?.includes('fetch') ? '인터넷 연결을 확인한 뒤 다시 시도해주세요.' : e.message || '연결하지 못했습니다. 다시 시도해주세요.'; };
@@ -142,7 +144,8 @@ export function mountBrain({ app, db, user, root }) {
           <h2 class="band">오늘의 두뇌 체조</h2>
           ${professorSays(`오늘의 5과목이 준비됐어요!<br>한 과목 ${Math.min(...today.map((id) => seconds(roundMs(id))))}~${Math.max(...today.map((id) => seconds(roundMs(id))))}초, 모두 약 ${Math.ceil(today.reduce((t, id) => t + roundMs(id) + 5000, 0) / 60000)}분이면 끝나요.`)}
           <ol class="lineup">${today.map((id, i) => `<li style="--cat:${AREAS[i].color}"><img src="${AREAS[i].icon}" alt="" width="40" height="40"/><span>${AREAS[i].label} · ${seconds(roundMs(id))}초</span><b>${esc(gameOf(id).name)}</b></li>`).join('')}</ol>
-          <button id="brain-start" class="btn btn-go btn-big" type="button">${todaySession && !todaySession.done ? '이어서 하기' : '시작!'}</button>
+          ${todaySession && !todaySession.done && interruptedByLock(todaySession, lockResetAt) ? '<p class="lock-note">선생님이 게임을 잠가서 하던 도전이 멈췄어요. 처음부터 다시 해요!</p>' : ''}
+          <button id="brain-start" class="btn btn-go btn-big" type="button">${todaySession && !todaySession.done ? (interruptedByLock(todaySession, lockResetAt) ? '처음부터 다시 시작!' : '이어서 하기') : '시작!'}</button>
           <p class="fine">하루 한 번 · 매일 오전 6시 새로 열려요 · 순위 보상 1등 100P, 한 등수마다 -5P, 기본 20P</p>
         </section>`;
 
@@ -421,6 +424,7 @@ export function mountBrain({ app, db, user, root }) {
   }
 
   subscriptions.push(onValue(ref(db, '.info/serverTimeOffset'), (s) => { offset = s.val() || 0; }));
+  subscriptions.push(onValue(ref(db, 'settings/lockResetAt'), (s) => { lockResetAt = Number(s.val() || 0); dashboard(); }, () => {}));
   subscriptions.push(onValue(ref(db, `users/${user.uid}`), (s) => { profile = s.val() || {}; dashboard(); }));
   subscriptions.push(onValue(ref(db, 'academy/best'), (s) => { best = s.val() || {}; dashboard(); }, () => {}));
   subscriptions.push(onValue(ref(db, `academy/history/${user.uid}`), (s) => { history = s.val() || {}; dashboard(); }, () => {}));
