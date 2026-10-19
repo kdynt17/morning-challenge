@@ -2041,3 +2041,42 @@ img {
 @keyframes block-collapse { to { height: 0; margin-top: 0; } }
 @keyframes shard-l { to { transform: translate(-60px, 26px) rotate(-35deg); opacity: 0; } }
 @keyframes shard-r { to { transform: translate(60px, 30px) rotate(40deg); opacity: 0; } }
+
+/* 정답 팝업: 문제를 가리지 않게 위쪽에 작고 반투명하게, 0.6초 만에 사라짐 */
+.answer-pop { top: 96px; min-width: 0; padding: 6px 16px 5px; border-width: 3px; border-radius: 999px; grid-auto-flow: column; align-items: baseline; gap: 10px; box-shadow: 0 4px 0 rgba(59, 47, 37, 0.2); }
+.answer-pop b { font-size: 26px; }
+.answer-pop span { font-size: 24px; }
+.answer-pop.is-ok { background: rgba(255, 251, 230, 0.86); }
+.answer-pop.is-bad { background: rgba(238, 244, 255, 0.86); }
+.answer-pop.is-show { animation: answer-pop 0.6s cubic-bezier(.2, .9, .3, 1) both; }
+.answer-pop.is-bad.is-show { animation: answer-pop-bad 0.6s ease-out both; }
+@keyframes answer-pop {
+  0% { opacity: 0; transform: translate(-50%, -20%) scale(0.5); }
+  20% { opacity: 1; transform: translate(-50%, -50%) scale(1.12); }
+  35% { transform: translate(-50%, -50%) scale(1); }
+  65% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(0.85); }
+}
+@keyframes answer-pop-bad {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  20% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  30% { transform: translate(-56%, -50%); }
+  40% { transform: translate(-44%, -50%); }
+  50% { transform: translate(-50%, -50%); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, 0%) scale(0.9); }
+}
+
+.play-tools { display: flex; justify-content: space-between; align-items: center; padding-right: 12px; }
+.play-tools .sound-btn { margin: 10px 0 8px; padding: 6px 12px; width: auto; min-height: 0; }
+
+/* 더쎈 망치: 목표를 크게 */
+.hammer-goal { display: flex; align-items: stretch; gap: 10px; }
+.hammer-goal .goal-num { display: grid; justify-items: center; padding: 6px 22px; border: 4px solid var(--ink); border-radius: 18px; background: var(--yellow); font-family: var(--display); }
+.hammer-goal .goal-num span { font-size: 16px; }
+.hammer-goal .goal-num b { font-size: 48px; font-weight: 400; line-height: 1; }
+.hammer-goal .now-num { display: grid; justify-items: center; align-content: center; padding: 6px 14px; border: 3px dashed var(--ink); border-radius: 18px; background: #fff; font-family: var(--display); }
+.hammer-goal .now-num span { font-size: 14px; }
+.hammer-goal .now-num b { font-size: 30px; font-weight: 400; line-height: 1.1; }
+.hammer-goal .now-num small { font-size: 12px; color: var(--ink-soft); }
+.hammer-goal.is-match .now-num { border-style: solid; background: #dff3d8; color: var(--green-dark); }

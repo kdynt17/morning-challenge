@@ -2,6 +2,7 @@ import { freeClient } from './free-client.js';
 import { ref, onValue } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 import { GAMES, CATEGORIES, roundMs, dailyReward, interruptedByLock, WRONG_PENALTY, WRONG_COOLDOWN, dayKey, closesAt, lineup, rankings, question, isCorrect, scoreRound } from './functions/domain.mjs';
 import { renderQuestion } from './game-art.js';
+import { sfx, soundOn, setSound } from './sound.js';
 import { AREAS, AREA_REFERENCE, GRADES, asset, dailyBrain, profileBrain, radarPoints } from './brain-score.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -275,7 +276,7 @@ export function mountBrain({ app, db, user, root }) {
     const area = AREAS[game.category];
     enterPlay();
     root.innerHTML = `<article class="brain-game" style="--cat:${area.color}">
-        <button id="brain-back" class="btn btn-ghost btn-small back-btn" type="button">← 나가기</button>
+        <div class="play-tools"><button id="brain-back" class="btn btn-ghost btn-small back-btn" type="button">← 나가기</button><button id="brain-sound" class="btn btn-ghost btn-small sound-btn" type="button" aria-pressed="${soundOn()}">${soundOn() ? '🔊 소리 켬' : '🔇 소리 끔'}</button></div>
         <header class="play-band">
           <img src="${area.icon}" alt="" width="44" height="44"/>
           <div><p class="eyebrow">${session.mode === 'daily' ? `${session.stage + 1} / 5 · ${area.label}` : `자유 연습 · ${area.label}`}</p><h2>${esc(game.name)}</h2></div>
@@ -289,6 +290,7 @@ export function mountBrain({ app, db, user, root }) {
         <p class="fine">${session.mode === 'daily' ? '나가도 시간은 계속 흘러요. 다시 들어오면 이어서 해요.' : '나가면 이번 연습은 저장되지 않아요.'} 맞혀야 다음 단계로! 틀리면 -${WRONG_PENALTY}점.</p>
       </article>`;
     root.querySelector('#brain-save').onclick = finish;
+    root.querySelector('#brain-sound').onclick = (e) => { setSound(!soundOn()); e.currentTarget.textContent = soundOn() ? '🔊 소리 켬' : '🔇 소리 끔'; e.currentTarget.setAttribute('aria-pressed', String(soundOn())); sfx('tap'); };
     root.querySelector('#brain-back').onclick = () => { if (window.history.state?.brainPlay) window.history.back(); else exitGame(); };
     window.scrollTo({ top: 0 });
     gameClock = setInterval(tick, 100); tick();
@@ -331,7 +333,7 @@ export function mountBrain({ app, db, user, root }) {
     const badge = root.querySelector('.score-badge');
     if (badge) { badge.classList.remove('is-bump', 'is-drop'); void badge.offsetWidth; badge.classList.add(ok ? 'is-bump' : 'is-drop'); }
     clearTimeout(feedbackTimer);
-    feedbackTimer = setTimeout(() => pop.classList.remove('is-show'), 900);
+    feedbackTimer = setTimeout(() => pop.classList.remove('is-show'), 600);
   }
   // 점수판 숫자가 이전 점수에서 새 점수까지 '촤라락' 굴러간다.
   let rolling = 0;
@@ -397,6 +399,9 @@ export function mountBrain({ app, db, user, root }) {
     // 계산: 같은 숫자를 여러 번 누를 수 있고, 자리 수를 다 채우면 바로 채점한다.
     if (q.type === 'digits') { selected.push(i); lastPaint = ''; if (selected.length === q.answer.length) answer(selected); return; }
     if (selected.includes(i)) return; selected.push(i); lastPaint = ''; pickedAt = now();
+    // 고르는 소리: 풍선은 펑, 망치는 깡, 나머지는 톡(정답·오답 소리는 answer에서)
+    const g = session.games[session.stage];
+    if (!(['memory', 'sequence'].includes(q.type) && (q.answer[selected.length - 1] !== i || selected.length === q.answer.length))) sfx(g === 'balloons' ? 'pop' : g === 'hammer' ? 'smash' : 'tap');
     if (['memory', 'sequence'].includes(q.type)) {
       if (q.answer[selected.length - 1] !== i || selected.length === q.answer.length) answer(selected);
     }
@@ -406,6 +411,7 @@ export function mountBrain({ app, db, user, root }) {
     const at = now() - session.startedAt; if (now() < questionAt + Math.max(180, q.preview) || at > roundMs(session.games[session.stage])) return;
     const before = progress().score, ok = isCorrect(q, values); events.push({ at, selected: [...values] });
     const after = progress().score, delta = after - before;
+    sfx(ok ? 'ok' : 'bad');
     popAnswer(ok, delta);
     rollScore(before, after);
     questionAt = now() + (ok ? 0 : WRONG_COOLDOWN); nextQuestion();

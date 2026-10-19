@@ -238,8 +238,9 @@ export function renderQuestion(game, q, view) {
     }
     case 'hammer': {
       const left = q.numbers.filter((_, i) => !picked(i)).reduce((a, b) => a + b, 0);
-      prompt = `필요 없는 블록을 부숴 합을 <b>${q.targetSum}</b>(으)로!`;
-      stage = `<div class="sum-meter"><span>남은 합</span><b class="${left === q.targetSum ? 'is-match' : ''}">${left}</b><span>목표 ${q.targetSum}</span></div>`;
+      prompt = '블록을 부숴 남은 합을 목표와 같게!';
+      // 목표를 크게, 지금 합은 옆에 작게. 같아지면 초록색으로 바뀐다.
+      stage = `<div class="hammer-goal ${left === q.targetSum ? 'is-match' : ''}"><div class="goal-num"><span>목표</span><b>${q.targetSum}</b></div><div class="now-num"><span>지금 합</span><b>${left}</b><small>${left === q.targetSum ? '완성!을 누르세요' : left > q.targetSum ? `${left - q.targetSum} 더 줄여요` : `${q.targetSum - left} 모자라요`}</small></div></div>`;
       // 숫자 블록을 쌓은 탑. 부순 블록은 빠지고 위 블록이 내려앉는다.
       layout = 'hammer-tower';
       // 방금 부순 블록은 그 높이에서 망치가 '깡!' 내려치고 두 조각으로 쪼개지며 사라진다.
