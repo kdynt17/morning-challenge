@@ -1892,8 +1892,9 @@ img {
 /* 계산 20 숫자판 */
 .calc-q { display: grid; justify-items: center; gap: 8px; font-family: var(--display); }
 .calc-q b { font-size: 44px; font-weight: 400; }
-.calc-answer { display: flex; gap: 6px; }
-.calc-answer i { display: grid; place-items: center; width: 44px; height: 54px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; font-style: normal; font-size: 32px; }
+.calc-answer { min-width: 120px; padding: 4px 18px; border: 3px solid var(--ink); border-radius: 14px; background: #fff; font-size: 38px; line-height: 1.2; }
+.calc-answer.is-empty { color: rgba(59, 47, 37, 0.25); }
+.calc-next { padding: 2px 12px; border: 2px dashed var(--board); border-radius: 999px; color: var(--ink-soft); font-size: 18px; }
 .numpad-grid { max-width: 300px; margin: 0 auto; }
 .tile-num { min-height: 58px; font-size: 28px; }
 .tile-num.is-zero { grid-column: 2; }
@@ -1926,3 +1927,51 @@ img {
 .guide-card .guide-hide { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
 .guide-card .btn { width: 100%; }
 .game-help { margin: 6px 14px 0; color: var(--ink-soft); font-size: 14px; }
+
+/* 정답·오답 도장: 가운데에 크게 '정답! +115' / '땡! -80' */
+.stamp { display: grid; place-content: center; z-index: 5; }
+.stamp b { font-family: var(--display); font-size: 40px; font-weight: 400; line-height: 1; }
+.stamp small { font-family: var(--display); font-size: 32px; }
+.stamp.is-ok { width: 170px; height: 170px; background: rgba(255, 255, 255, 0.96); color: #e8403f; box-shadow: 0 6px 0 rgba(59, 47, 37, 0.25); }
+.stamp.is-bad { width: 170px; height: 170px; border: 6px solid #2f6fe8; border-radius: 28px; background: rgba(255, 255, 255, 0.96); color: #2f6fe8; box-shadow: 0 6px 0 rgba(59, 47, 37, 0.25); }
+.stamp.is-bad::before, .stamp.is-bad::after { z-index: -1; opacity: 0.25; }
+.stamp.is-show { animation: stamp-pop 0.65s cubic-bezier(.2, 1.6, .4, 1) both; }
+@keyframes stamp-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3) rotate(-12deg); }
+  30% { opacity: 1; transform: translate(-50%, -50%) scale(1.12) rotate(4deg); }
+  70% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); }
+  100% { opacity: 0; transform: translate(-50%, -60%) scale(0.95); }
+}
+
+/* 점수판 옆에 튀어 오르는 +/− 점수 */
+.score-badge { position: relative; }
+.score-badge.is-bump { animation: bump 0.35s ease-out; }
+@keyframes bump { 40% { transform: scale(1.18); } }
+.score-delta { position: absolute; top: -6px; right: -4px; font-family: var(--display); font-size: 20px; font-style: normal; opacity: 0; pointer-events: none; }
+.score-delta.is-ok { color: var(--green-dark, #2f8f2a); }
+.score-delta.is-bad { color: #e8403f; }
+.score-delta.is-show { animation: delta-up 0.65s ease-out; }
+@keyframes delta-up { 0% { opacity: 0; transform: translateY(8px) scale(0.6); } 25% { opacity: 1; transform: translateY(-6px) scale(1.2); } 100% { opacity: 0; transform: translateY(-26px) scale(1); } }
+
+.feedback.is-ok { color: var(--green-dark, #2f8f2a); font-family: var(--display); font-size: 20px; }
+.feedback.is-bad { color: #e8403f; font-family: var(--display); font-size: 20px; }
+
+/* 더쎈 망치: 망치가 내려치는 모션 */
+.q-stage { position: relative; }
+.hammer-hit { position: absolute; top: 46px; right: 4px; display: grid; justify-items: center; pointer-events: none; }
+.hammer-hit i { font-size: 46px; font-style: normal; transform-origin: 80% 80%; animation: hammer-swing 0.35s ease-in; }
+.hammer-hit b { font-family: var(--display); font-size: 22px; font-weight: 400; color: var(--tomato); animation: bang 0.45s ease-out both; }
+@keyframes hammer-swing { 0% { transform: rotate(-70deg); } 70% { transform: rotate(18deg); } 100% { transform: rotate(0); } }
+@keyframes bang { 0%, 50% { opacity: 0; transform: scale(0.4); } 70% { opacity: 1; transform: scale(1.3); } 100% { opacity: 0; transform: scale(1); } }
+
+/* 연습 결과 카드 */
+.practice-score { margin: 0; font-family: var(--display); font-size: 64px; line-height: 1; color: var(--tomato); -webkit-text-stroke: 2px #fff; paint-order: stroke fill; text-shadow: 0 3px 0 var(--ink); }
+.practice-score small { font-size: 28px; }
+.record-badge { display: inline-block; margin-top: 8px; padding: 4px 14px; border: 3px solid var(--ink); border-radius: 999px; background: var(--yellow); font-family: var(--display); font-size: 20px; animation: bump 0.6s ease-out 2; }
+.result-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+.result-stats div { padding: 10px 6px; border: 3px solid var(--ink); border-radius: 14px; background: #fff; text-align: center; }
+.result-stats dt { font-size: 14px; color: var(--ink-soft); }
+.result-stats dd { margin: 4px 0 0; font-family: var(--display); font-size: 22px; }
+.result-stats dd small { display: block; font-size: 12px; color: #e8403f; }
+.practice-result .btn { width: 100%; margin-top: 8px; }
+.my-best { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #fff3b0; font-family: var(--body, inherit); font-size: 12px; font-weight: 700; }

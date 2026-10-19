@@ -136,7 +136,7 @@ const drift = (time, i, period) => `-${(((time || 0) / 1000) + i * 0.83) % perio
  * @param {{preview:boolean, lit:number, selected:number[]}} view
  */
 export function renderQuestion(game, q, view) {
-  const { preview, lit, selected, time = 0 } = view;
+  const { preview, lit, selected, time = 0, next = '' } = view;
   const picked = (i) => selected.includes(i);
   const disabled = (i) => (preview || picked(i) ? 'disabled' : '');
   let stage = '';
@@ -169,8 +169,9 @@ export function renderQuestion(game, q, view) {
     }
     case 'calc': {
       prompt = '답을 입력하세요';
+      // 몇 자리인지 알려주지 않는다. 다음 문제는 아래에 흐리게 미리 보여준다.
       const typed = selected.map((i) => q.choices[i]).join('');
-      stage = `<div class="calc-q"><b>${esc(q.prompt)}</b><span class="calc-answer">${Array.from({ length: q.answer.length }, (_, i) => `<i>${esc(typed[i] ?? '')}</i>`).join('')}</span></div>`;
+      stage = `<div class="calc-q"><b>${esc(q.prompt)}</b><span class="calc-answer ${typed ? '' : 'is-empty'}">${esc(typed || '?')}</span>${next ? `<span class="calc-next">다음 · ${esc(next)}</span>` : ''}</div>`;
       layout = 'grid-3 numpad-grid';
       choices = q.choices.map((c, i) => `<button class="tile tile-num ${c === '0' ? 'is-zero' : ''}" data-answer="${i}" ${preview ? 'disabled' : ''}>${c}</button>`).join('')
         + '<button id="brain-backspace" class="tile tile-num is-back" type="button" aria-label="지우기">⌫</button>';
@@ -240,6 +241,8 @@ export function renderQuestion(game, q, view) {
       stage = `<div class="sum-meter"><span>남은 합</span><b class="${left === q.targetSum ? 'is-match' : ''}">${left}</b><span>목표 ${q.targetSum}</span></div>`;
       // 숫자 블록을 쌓은 탑. 부순 블록은 빠지고 위 블록이 내려앉는다.
       layout = 'hammer-tower';
+      // 방금 부순 블록 자리에 망치가 '깡!' 내려친다.
+      if (selected.length) stage += `<span class="hammer-hit" aria-hidden="true"><i>🔨</i><b>깡!</b></span>`;
       choices = q.numbers.map((n, i) => (picked(i) ? '' : `<button class="tower-block" data-answer="${i}" style="--c:${PIECE_COLORS[i % PIECE_COLORS.length]}" aria-label="${n} 블록 부수기" ${disabled(i)}>${n}</button>`)).join('');
       break;
     }
@@ -271,5 +274,5 @@ export function renderQuestion(game, q, view) {
   const confirm = ['sum', 'remove', 'tetris'].includes(q.type)
     ? `<div class="confirm-row"><button id="brain-reset" class="btn btn-ghost" type="button">되돌리기</button><button id="brain-confirm" class="btn btn-go" type="button">완성!</button></div>`
     : '';
-  return `<p class="q-prompt">${prompt}</p>${stage ? `<div class="q-stage">${stage}</div>` : ''}${preview ? '<p class="remember-label">기억하세요…</p>' : ''}<div class="choices ${layout}">${choices}</div>${confirm}`;
+  return `<p class="q-prompt">${prompt}</p>${stage ? `<div class="q-stage">${stage}</div>` : ''}${preview && q.type === 'memory' ? '<p class="remember-label">기억하세요…</p>' : ''}<div class="choices ${layout}">${choices}</div>${confirm}`;
 }

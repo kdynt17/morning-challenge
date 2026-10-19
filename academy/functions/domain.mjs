@@ -63,15 +63,17 @@ export function traceLadder(start, lines) { return lines.reduce((p, x) => p === 
 export function blockHeights(q, removed = []) {
   return Array.from({ length: q.width }, (_, c) => Array.from({ length: q.height }, (_, row) => q.owner[row * q.width + c]).filter((o) => o >= 0 && !removed.includes(o)).length);
 }
-export function question(game, seed, index) {
-  const r = rng(`${seed}:${game}:${index}`), int = n => Math.floor(r() * n);
+// step = 지금까지 맞힌 개수. 난이도는 맞혀야만 올라가고, 틀리면 같은 단계의 새 문제가 나온다.
+// 계산 20은 틀리면 같은 문제를 다시 풀어야 한다(그래야 '다음 문제' 미리보기도 정확하다).
+export function question(game, seed, index, step = index) {
+  const r = rng(`${seed}:${game}:${game === 'calc' ? `s${step}` : index}`), int = n => Math.floor(r() * n);
   const shuffle = a => a.map(x => [r(), x]).sort((a,b) => a[0]-b[0]).map(x=>x[1]);
   const range = (n, from = 0) => Array.from({ length: n }, (_, i) => i + from);
-  const level = Math.min(5, Math.floor(index / 3));
+  const level = Math.min(5, Math.floor(step / 3));
   const q = { type: 'choice', prompt: '', choices: [], answer: [], preview: 0 };
   if (game === 'mole') {
     const icons = shuffle(['🐱','🐶','🐼','🐸','🐷','🐥','🐰','🐵','🐨','🐧','🐭','🐻']);
-    q.choices = icons.slice(0, Math.min(12, 3 + Math.floor(index / 2))); q.answer = [int(q.choices.length)]; q.prompt = `이 그림을 찾아요: ${q.choices[q.answer[0]]}`;
+    q.choices = icons.slice(0, Math.min(12, 3 + Math.floor(step / 2))); q.answer = [int(q.choices.length)]; q.prompt = `이 그림을 찾아요: ${q.choices[q.answer[0]]}`;
   } else if (game === 'focus') {
     const arrows = level < 1 ? ['←','→'] : ['←','→','↑','↓'];
     q.choices = arrows; q.answer = [int(arrows.length)]; q.prompt = Array.from({length:5}, (_,i)=>arrows[i===2?q.answer[0]:int(arrows.length)]).join('  ');
@@ -101,7 +103,7 @@ export function question(game, seed, index) {
     q.answer = nums.map((_,i)=>i).sort((a,b)=>nums[a]-nums[b]);
   } else if (game === 'memory') {
     // 3×3 → 4×4 → 5×5. 9문제째부터는 1,3,5,7,10처럼 띄엄띄엄한 수가 나온다.
-    const size = level < 2 ? 3 : level < 4 ? 4 : 5, count = Math.min(10, 3 + Math.floor(index / 2));
+    const size = level < 2 ? 3 : level < 4 ? 4 : 5, count = Math.min(10, 3 + Math.floor(step / 2));
     const cells = shuffle(range(size * size)).slice(0, count);
     const numbers = level < 3 ? range(count, 1) : shuffle(range(20, 1)).slice(0, count).sort((a, b) => a - b);
     q.type = 'memory'; q.size = size; q.choices = Array(size * size).fill(''); q.answer = cells;
@@ -109,9 +111,9 @@ export function question(game, seed, index) {
     q.preview = 900 + count * 250; q.prompt = '작은 숫자가 있던 칸부터 누르세요';
   } else if (game === 'sequence') {
     // 4칸부터 시작해 길어지고, 불이 켜지는 속도도 점점 빨라진다.
-    const size = level < 3 ? 3 : 4, count = Math.min(9, 4 + Math.floor(index / 3));
+    const size = level < 3 ? 3 : 4, count = Math.min(9, 4 + Math.floor(step / 3));
     q.type = 'memory'; q.size = size; q.choices = Array(size * size).fill(''); q.answer = shuffle(range(size * size)).slice(0, count);
-    q.flash = Math.max(280, 620 - index * 22); q.preview = count * q.flash + 300; q.prompt = '반짝인 순서대로 누르세요';
+    q.flash = Math.max(280, 620 - step * 22); q.preview = count * q.flash + 300; q.prompt = '반짝인 순서대로 누르세요';
   } else if (game === 'blocks') {
     // 테트리스처럼: 조각을 누르면 조각 전체가 사라지고, 위에 있던 블록이 떨어진다.
     const W = 4, H = level < 2 ? 4 : 5, heights = Array.from({ length: W }, () => 2 + int(H - 1));
@@ -200,14 +202,17 @@ export function isCorrect(q, selected) {
   if(q.type==='remove') return selected.length===q.answer.length && selected.every(i=>q.answer.includes(i));
   return selected.length===q.answer.length && selected.every((v,i)=>v===q.answer[i]);
 }
+// 틀리면 80점 감점(0점 아래로는 안 내려감)과 0.7초 대기. 아무거나 막 눌러서 점수를 올릴 수 없게 한다.
+export const WRONG_PENALTY = 80;
+export const WRONG_COOLDOWN = 700;
 export function scoreRound(game, seed, events) {
   if(!Array.isArray(events)||events.length>400) throw new Error('기록 형식 오류');
-  let score=0, combo=0, last=0, correct=0, cooldown=0;
+  let score=0, combo=0, last=0, correct=0, wrong=0, cooldown=0;
   events.forEach((e,i)=>{
-    const q=question(game,seed,i);
+    const q=question(game,seed,i,correct);
     if(!Number.isFinite(e.at)||e.at<last+Math.max(180,q.preview)+cooldown||e.at>roundMs(game)) throw new Error('기록 시간 오류');
-    last=e.at; const ok=isCorrect(q,e.selected);cooldown=ok?0:400;
-    if(ok){correct++;combo++;score+=100+Math.min(combo-1,10)*5;}else combo=0;
+    last=e.at; const ok=isCorrect(q,e.selected);cooldown=ok?0:WRONG_COOLDOWN;
+    if(ok){correct++;combo++;score+=100+Math.min(combo-1,10)*5;}else{combo=0;wrong++;score=Math.max(0,score-WRONG_PENALTY);}
   });
-  return {score,correct,attempts:events.length};
+  return {score,correct,wrong,attempts:events.length};
 }

@@ -81,7 +81,11 @@ try{
     assert.ok(await page.locator('[data-answer]').count()>0);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,game.id+' overflows mobile');
     await shot(`game-${game.id}`);
-    await page.clock.fastForward(61000);await page.locator('[data-practice]:not(:disabled)').first().waitFor();
+    await page.clock.fastForward(61000);
+    // 연습이 끝나면 결과 카드(점수·정답·오답·내 최고)가 나온다.
+    await page.locator('.practice-result .result-stats').waitFor();
+    if(game.id==='mole')await shot('practice-result');
+    await page.locator('#brain-result-back').click();await page.locator('[data-practice]:not(:disabled)').first().waitFor();
   }
   assert.equal(state.users.tester.points,50);
   assert.deepEqual(errors,[]);console.log('PASS: five daily rounds, back button/browser back closes practice, new practice replaces old, all 15 practice games with guides, mobile layout, 50P daily cap, no browser errors.');

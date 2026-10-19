@@ -106,3 +106,21 @@ test('new games: merged memory grows, sequence speeds up, tetris blocks fall, ca
   assert.equal(areaPoints('focus', 1000), 2000);
   assert.equal(areaPoints('memory', 900), 800);
 });
+
+test('wrong answers cost points, keep the level, and calc repeats the same problem', async () => {
+  const { question, scoreRound, WRONG_PENALTY, WRONG_COOLDOWN } = await import('../academy/functions/domain.mjs');
+  const seed = 'w', wrongPick = (q) => (q.type === 'digits' ? [...q.answer, 0] : q.answer.length === 1 ? [(q.answer[0] + 1) % q.choices.length] : [...q.answer].reverse());
+  // 정답 2개 → 오답 1개: 200+5 = 205 → 125
+  const qs = [question('mole', seed, 0, 0), question('mole', seed, 1, 1)];
+  const third = question('mole', seed, 2, 2);
+  const events = [{ at: 1000, selected: qs[0].answer }, { at: 2000, selected: qs[1].answer }, { at: 3000, selected: wrongPick(third) }];
+  const r = scoreRound('mole', seed, events);
+  assert.deepEqual([r.score, r.correct, r.wrong], [205 - WRONG_PENALTY, 2, 1]);
+  // 틀린 뒤에는 0.7초 기다려야 하고, 0점 아래로는 안 내려간다.
+  assert.throws(() => scoreRound('mole', seed, [{ at: 1000, selected: wrongPick(qs[0]) }, { at: 1000 + WRONG_COOLDOWN - 1, selected: [0] }]));
+  assert.equal(scoreRound('mole', seed, [{ at: 1000, selected: wrongPick(qs[0]) }]).score, 0);
+  // 아무거나 막 눌러도 단계가 오르지 않는다(틀리면 같은 단계의 문제).
+  assert.equal(question('mole', seed, 5, 0).choices.length, 3);
+  // 계산은 틀리면 같은 문제
+  assert.equal(question('calc', seed, 0, 4).prompt, question('calc', seed, 1, 4).prompt);
+});
