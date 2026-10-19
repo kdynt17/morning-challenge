@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
-    <link rel="stylesheet" href="styles.css?v=20261019-fix" />
-    <script type="module" src="app.js?v=20261019-lock"></script>
+    <link rel="stylesheet" href="styles.css?v=20261019-games" />
+    <script type="module" src="app.js?v=20261019-games"></script>
   </head>
   <body>
     <main>
@@ -137,51 +137,6 @@
 
 
 
-        <section id="calc-page" class="page" data-page="calc">
-          <div class="game-topbar">
-            <button class="back-button" type="button" data-target-page="games">← 두뇌교실</button>
-            <span class="area-tag">계산력</span>
-            <button class="help-button" type="button" data-help="calc" aria-label="계산 20 설명서"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8M12 17h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
-          </div>
-          <div id="calc-root" class="bt-root"></div>
-          <button id="calc-start" class="primary-button" type="button">시작하기</button>
-          <p class="helper-text center-text">20문제를 최대한 빨리! 틀리면 문제당 5초가 더해져요.</p>
-          <article class="card my-bests">
-            <p class="card-label">이번 달 내 최고 기록</p>
-            <p id="calc-best" class="best-single">-</p>
-          </article>
-        </section>
-
-        <section id="stroop-page" class="page" data-page="stroop">
-          <div class="game-topbar">
-            <button class="back-button" type="button" data-target-page="games">← 두뇌교실</button>
-            <span class="area-tag">집중력</span>
-            <button class="help-button" type="button" data-help="stroop" aria-label="색깔 판단 설명서"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8M12 17h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
-          </div>
-          <div id="stroop-root" class="bt-root"></div>
-          <button id="stroop-start" class="primary-button" type="button">시작하기</button>
-          <p class="helper-text center-text">글자 뜻에 속지 말고 색깔만 보세요. 틀리면 3초가 더해져요.</p>
-          <article class="card my-bests">
-            <p class="card-label">이번 달 내 최고 기록</p>
-            <p id="stroop-best" class="best-single">-</p>
-          </article>
-        </section>
-
-        <section id="memory-page" class="page" data-page="memory">
-          <div class="game-topbar">
-            <button class="back-button" type="button" data-target-page="games">← 두뇌교실</button>
-            <span class="area-tag">기억력</span>
-            <button class="help-button" type="button" data-help="memory" aria-label="순간 기억 설명서"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8M12 17h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
-          </div>
-          <div id="memory-root" class="bt-root"></div>
-          <button id="memory-start" class="primary-button" type="button">시작하기</button>
-          <p class="helper-text center-text">숫자는 잠깐만 보여요. 2번 틀리면 끝!</p>
-          <article class="card my-bests">
-            <p class="card-label">이번 달 내 최고 기록</p>
-            <p id="memory-best" class="best-single">-</p>
-          </article>
-        </section>
-
         <!-- 순위 -->
         <section id="leaderboard-page" class="page" data-page="leaderboard">
           <p id="rank-caption" class="helper-text no-margin"></p>
@@ -292,28 +247,6 @@
           </button>
         </nav>
       </section>
-
-      <!-- 게임 설명서 (게임마다 내용이 바뀜) -->
-      <dialog id="tutorial-dialog" class="sheet-dialog" aria-labelledby="tutorial-title">
-        <img class="tutorial-mascot" src="academy/assets/mascot-professor.webp" alt="" width="96" height="96" />
-        <p class="eyebrow">설명서</p>
-        <h2 id="tutorial-title">이렇게 해요</h2>
-        <ol id="tutorial-steps" class="tutorial-steps"></ol>
-        <label class="checkbox-label"><input id="tutorial-hide" type="checkbox" /> 다시 보지 않기</label>
-        <button id="tutorial-close" class="primary-button" type="button">확인, 시작할게요</button>
-      </dialog>
-
-      <!-- 게임 결과 -->
-      <dialog id="result-dialog" class="sheet-dialog result-dialog" aria-labelledby="result-title">
-        <p id="result-eyebrow" class="eyebrow">결과</p>
-        <h2 id="result-title">성공!</h2>
-        <p id="result-time" class="result-time">0.00초</p>
-        <p id="result-detail" class="helper-text center-text"></p>
-        <div class="dialog-actions">
-          <button id="result-again" class="primary-button" type="button">한 판 더</button>
-          <button id="result-secondary" class="secondary-button" type="button">순위 보기</button>
-        </div>
-      </dialog>
 
       <!-- 상품 -->
       <dialog id="product-dialog" class="sheet-dialog product-dialog">

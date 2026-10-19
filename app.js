@@ -1,6 +1,6 @@
 import {freeClient} from './academy/free-client.js';
-import {dayKey as academyDay,closesAt as academyEnd,isHiddenUid} from './academy/functions/domain.mjs';
-import {mountBrain,brainSummary} from './academy/brain.js';
+import {dayKey as academyDay,closesAt as academyEnd,isHiddenUid,GAMES as ACADEMY_GAMES} from './academy/functions/domain.mjs';
+import {mountBrain,brainSummary,GUIDE_HIDDEN_PREFIX} from './academy/brain.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -18,7 +18,6 @@ import {
 import {
   get,
   getDatabase,
-  limitToFirst,
   limitToLast,
   onValue,
   orderByChild,
@@ -33,15 +32,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
 import { firebaseConfig } from "./firebase-config.js";
-import { createCalc20 } from "./games/calc20.js?v=20261018-brain";
-import { createStroop } from "./games/stroop.js?v=20261018-brain";
-import { createMemory } from "./games/memory.js?v=20261018-brain";
-import {
-  AREAS,
-  scoreCalc,
-  scoreFocus,
-  scoreMemory,
-} from "./brain.js?v=20261018-brain";
 
 const ADMIN_LOGIN = "admin@admin";
 const ADMIN_AUTH_EMAIL = "admin@admin.com";
@@ -53,40 +43,8 @@ const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 const ATTENDANCE_POINTS = 10;
 const STREAK_BONUS_EVERY = 7;
 const STREAK_BONUS_POINTS = 30;
-const BRAIN_GAMES = {
-  calc: { label: "계산 20", area: "calc", lowerIsBetter: true },
-  stroop: { label: "색깔 판단", area: "focus", lowerIsBetter: true },
-  memory: { label: "순간 기억", area: "memory", lowerIsBetter: false },
-};
-const TUTORIAL_HIDDEN_PREFIX = "mc.tutorialHidden.";
 const LAST_EMAIL_KEY = "mc.lastEmail";
 const LAST_NAME_KEY = "mc.lastName";
-const TUTORIALS = {
-  calc: {
-    title: "계산 20, 이렇게 해요",
-    steps: [
-      ["20문제가 차례로 나와요.", "더하기, 빼기, 곱하기 한 자리 수준의 쉬운 계산이에요.", '<span class="tutorial-chip">7 + 8</span>'],
-      ["숫자판으로 답을 입력해요.", "자리수를 다 채우면 바로 채점하고 다음 문제로 넘어가요. PC는 키보드도 돼요.", '<span class="tutorial-chip">15</span>'],
-      ["틀리면 5초가 더해져요.", "속도와 정확도 둘 다 중요해요. 기록이 빠를수록 계산력 점수가 올라가요.", '<span class="tutorial-chip mark-bad">+5초</span>'],
-    ],
-  },
-  stroop: {
-    title: "색깔 판단, 이렇게 해요",
-    steps: [
-      ["글자의 색깔을 골라요.", "글자 뜻이 아니라 <em>칠해진 색</em>을 눌러야 해요.", '<span class="tutorial-chip" style="color:#2f5bea">빨강</span>'],
-      ["위 예시의 정답은 파랑!", "뇌가 글자를 먼저 읽으려고 해서 헷갈려요. 집중력 훈련이에요.", '<span class="tutorial-chip"><span class="swatch" style="--swatch:#2f5bea"></span>파랑</span>'],
-      ["20문제, 틀리면 3초 추가.", "PC는 1·2·3·4 키로도 고를 수 있어요.", '<span class="tutorial-chip mark-bad">+3초</span>'],
-    ],
-  },
-  memory: {
-    title: "순간 기억, 이렇게 해요",
-    steps: [
-      ["숫자가 잠깐 보여요.", "어디에 몇 번이 있는지 위치를 기억하세요.", '<span class="tutorial-chip">1 · 2 · 3</span>'],
-      ["숫자가 사라지면 1부터 순서대로!", "먼저 누르면 바로 가려져요. 자신 있으면 빨리 시작하세요.", '<span class="tutorial-chip">? ? ?</span>'],
-      ["맞히면 숫자가 하나씩 늘어요.", "2번 틀리면 끝. 기억한 최대 개수가 기록이에요.", '<span class="tutorial-chip">+1</span>'],
-    ],
-  },
-};
 const DAY_MS = 86400000;
 const KST_OFFSET_MS = 9 * 3600000;
 
@@ -132,16 +90,10 @@ const dialogAfterBalance = $("#dialog-after-balance");
 const buyProductButton = $("#buy-product-button");
 const purchaseMessage = $("#purchase-message");
 const attendanceButton = $("#attendance-button");
-const tutorialDialog = $("#tutorial-dialog");
-const resultDialog = $("#result-dialog");
 
-const GAME_PAGES = ["calc", "stroop", "memory"];
 const pageNames = {
   home: "홈",
   games: "두뇌교실",
-  calc: "계산 20",
-  stroop: "색깔 판단",
-  memory: "순간 기억",
   leaderboard: "순위",
   store: "포인트 상점",
   profile: "내 정보",
@@ -158,14 +110,7 @@ let unsubscribers = [];
 let rankUnsubscribe = null;
 let serverOffsetMs = 0;
 let attendance = null;
-let gameDaily = null;
-let tutorialsShownThisSession = new Set();
-let tutorialGame = null;
-let brainGames = {};
 let brainData = null;
-let gameBests = {};
-let resultAgain = null;
-let resultSecondary = null;
 let toastTimer = null;
 let sessionDay = null;
 let brainMount = null;
@@ -209,10 +154,11 @@ if (setupRequired) {
     showPage(pageNames[page] ? page : "home", { push: false });
   });
 
-  $("#result-again").addEventListener("click",()=>{resultDialog.close();resultAgain?.();});
-  $("#result-secondary").addEventListener("click",()=>{resultDialog.close();resultSecondary?.();});
-  setupBrainGames();
-  setupTutorial();
+  // 내 정보 → 게임 설명서 다시 보이게 하기
+  $("#show-tutorials-button").addEventListener("click", () => {
+    ACADEMY_GAMES.forEach((game) => storeLocal(GUIDE_HIDDEN_PREFIX + game.id, null));
+    showToast("연습을 시작하면 설명서가 다시 나와요.");
+  });
   setAuthMode("login");
 
   // 자정이나 월이 바뀐 채로 화면을 켜 두면 날짜 기준 구독을 새로 연다.
@@ -221,7 +167,7 @@ if (setupRequired) {
     if (kstDay(serverNow()) === sessionDay) return;
     const activePage = document.querySelector(".page.active-page")?.dataset.page ?? "home";
     clearSubscriptions();
-    enterApp(GAME_PAGES.includes(activePage) ? "games" : activePage);
+    enterApp(activePage);
   }, 60000);
 
   onAuthStateChanged(auth, async (user) => {
@@ -230,9 +176,7 @@ if (setupRequired) {
     currentProfile = null;
     selectedProduct = null;
     attendance = null;
-    gameDaily = null;
     brainData = null;
-    gameBests = {};
 
     if (!user) {
       showSignedOut();
@@ -257,9 +201,8 @@ if (setupRequired) {
     }
     // 두뇌교실 화면의 아래 메뉴에서 ?page=store 처럼 들어오면 그 화면을 연다.
     const params = new URLSearchParams(location.search);
-    const requested = params.get("game");
     const requestedPage = params.get("page");
-    enterApp(GAME_PAGES.includes(requested) ? requested : ["games", "leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
+    enterApp(params.has("game") ? "games" : ["games", "leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
   });
 }
 
@@ -273,7 +216,6 @@ function enterApp(page = "home") {
   subscribeAttendance();
   mountAcademy();
   subscribeGameDaily();
-  subscribeMyBests();
   subscribeBrain();
   subscribePointsLeaderboard();
   subscribeStore();
@@ -527,7 +469,6 @@ function showSignedOut() {
 
 function showPage(page, { push = true } = {}) {
   if (!pageNames[page]) page = "home";
-  if (GAME_PAGES.includes(page) && gamesLocked && !isTeacher(currentProfile, currentUser)) page = "games";
   const current = document.querySelector(".page.active-page")?.dataset.page;
   if (push && page !== current) history.pushState({ page }, "");
   // 두뇌교실 밖으로 나가면 진행 중인 게임 화면을 닫는다(오늘의 도전은 '이어서 하기'로 돌아올 수 있음).
@@ -535,24 +476,13 @@ function showPage(page, { push = true } = {}) {
   document.querySelectorAll(".page").forEach((section) => {
     section.classList.toggle("active-page", section.dataset.page === page);
   });
-  const navKey = GAME_PAGES.includes(page) ? "games" : page;
   document.querySelectorAll(".bottom-nav [data-nav]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.nav === navKey);
-  });
-
-  // 다른 화면으로 가면 진행 중인 두뇌 게임은 멈춘다.
-  Object.entries(brainGames).forEach(([key, instance]) => {
-    if (key !== page) {
-      instance.stop();
-      $(`#${key}-start`).hidden = false;
-    }
+    button.classList.toggle("active", button.dataset.nav === page);
   });
 
   pageTitle.textContent = pageNames[page] ?? "아침 챌린지";
   todayLabel.textContent = formatKoreanDate(serverNow());
   window.scrollTo({ top: 0 });
-
-  if (GAME_PAGES.includes(page)) maybeShowTutorial(page);
 }
 
 // ── 두뇌교실 (같은 화면 안에서 연다) ─────────────────────────
@@ -569,7 +499,7 @@ function mountAcademy() {
     root.innerHTML = `<p class="empty-text">지금은 선생님이 게임을 잠가 두었어요. 잠금이 풀리면 다시 할 수 있어요.</p>`;
     return;
   }
-  brainMount = mountBrain({ db, user: currentUser, root, onClassic: (key) => showPage(key) });
+  brainMount = mountBrain({ db, user: currentUser, root });
 }
 
 // ── 게임 잠금 (선생님이 켜고 끔) ───────────────────────────
@@ -583,12 +513,6 @@ function subscribeGameLock() {
     if (!changed || isTeacher(currentProfile, currentUser)) return;
     if (locked) {
       brainMount?.exit?.();
-      Object.entries(brainGames).forEach(([key, instance]) => {
-        instance.stop();
-        $(`#${key}-start`).hidden = false;
-      });
-      const current = document.querySelector(".page.active-page")?.dataset.page;
-      if (GAME_PAGES.includes(current)) showPage("games", { push: false });
       showToast("선생님이 게임을 잠갔어요.");
     }
     mountAcademy();
@@ -734,23 +658,6 @@ async function checkIn(today) {
   showToast("출석은 됐지만 포인트 반영에 실패했어요. 선생님께 말씀해 주세요.");
 }
 
-function canSaveGame() {
-  return Boolean(currentUser) && !isTeacher(currentProfile, currentUser);
-}
-
-function openResult({ eyebrow, title, time, detail, lost = false, again, secondary, secondaryLabel = "순위 보기" }) {
-  resultAgain = again ?? null;
-  resultSecondary = secondary ?? null;
-  $("#result-secondary").textContent = secondaryLabel;
-  $("#result-eyebrow").textContent = eyebrow;
-  $("#result-title").textContent = title;
-  $("#result-time").textContent = time;
-  $("#result-time").hidden = !time;
-  $("#result-detail").textContent = detail;
-  resultDialog.classList.toggle("is-lost", lost);
-  if (!resultDialog.open) resultDialog.showModal();
-}
-
 function subscribeGameDaily() {
   unsubscribers.push(onValue(ref(db,`users/${currentUser.uid}`),snapshot=>{
     const p=snapshot.val()||{};
@@ -759,154 +666,6 @@ function subscribeGameDaily() {
     $('#daily-game-points').textContent=used;
     $('#daily-game-fill').style.width=used*2+'%';
   }));
-}
-
-function subscribeMyBests() {
-  const month=kstMonthKey(serverNow());
-  Object.keys(BRAIN_GAMES).forEach(key=>unsubscribers.push(onValue(ref(db,`records/${month}/${key}/${currentUser.uid}`),s=>{
-    gameBests[key]=s.exists()?Number(s.val().value):null;
-    $(`#${key}-best`).textContent=formatGameValue(key,gameBests[key]);
-  })));
-}
-
-function setupTutorial() {
-  $("#tutorial-close").addEventListener("click", () => {
-    // 저장소를 못 쓰는 브라우저에서는 이번 접속 동안만 숨긴다.
-    if ($("#tutorial-hide").checked && tutorialGame) storeLocal(TUTORIAL_HIDDEN_PREFIX + tutorialGame, "1");
-    tutorialDialog.close();
-  });
-  document.querySelectorAll("[data-help]").forEach((button) => {
-    button.addEventListener("click", () => openTutorial(button.dataset.help));
-  });
-  $("#show-tutorials-button").addEventListener("click", () => {
-    Object.keys(TUTORIALS).forEach((key) => storeLocal(TUTORIAL_HIDDEN_PREFIX + key, null));
-    tutorialsShownThisSession = new Set();
-    showToast("게임에 들어가면 설명서가 다시 나와요.");
-  });
-}
-
-function maybeShowTutorial(gameKey) {
-  if (tutorialsShownThisSession.has(gameKey)) return;
-  tutorialsShownThisSession.add(gameKey);
-  const hidden = readLocal(TUTORIAL_HIDDEN_PREFIX + gameKey) === "1";
-  if (!hidden) openTutorial(gameKey);
-}
-
-function openTutorial(gameKey) {
-  const tutorial = TUTORIALS[gameKey];
-  if (!tutorial) return;
-  tutorialGame = gameKey;
-  $("#tutorial-title").textContent = tutorial.title;
-  $("#tutorial-steps").innerHTML = tutorial.steps.map(([title, body, visual]) => `
-    <li>
-      <div class="mini-board" aria-hidden="true">${visual}</div>
-      <div><strong>${title}</strong> ${body}</div>
-    </li>
-  `).join("");
-  $("#tutorial-hide").checked = false;
-  if (!tutorialDialog.open) tutorialDialog.showModal();
-}
-
-// ── 두뇌 트레이닝 게임 ──────────────────────────────────────
-
-function setupBrainGames() {
-  const factories = { calc: createCalc20, stroop: createStroop, memory: createMemory };
-  Object.entries(factories).forEach(([key, factory]) => {
-    brainGames[key] = factory($(`#${key}-root`), { onFinish: (result) => void handleBrainFinish(key, result) });
-    $(`#${key}-start`).addEventListener("click", () => startBrainGame(key));
-  });
-}
-
-async function startBrainGame(key) {
-  if (gamesLocked && !isTeacher(currentProfile, currentUser)) {
-    showToast("지금은 선생님이 게임을 잠가 두었어요.");
-    return;
-  }
-  try {
-    const end=academyEnd(academyDay(serverNow()));
-    if(!(await get(ref(db,`academy/sessions/${currentUser.uid}/${end}/done`))).val()) {showToast('오늘 5영역 도전을 먼저 완료해주세요.');return;}
-    if(resultDialog.open)resultDialog.close();
-    $(`#${key}-start`).hidden=true;
-    void brainGames[key].start();
-  } catch {showToast('게임 시작 조건을 확인하지 못했어요. 다시 시도해주세요.');}
-}
-
-async function handleBrainFinish(key, result) {
-  const config = BRAIN_GAMES[key];
-  $(`#${key}-start`).hidden = false;
-  $(`#${key}-start`).textContent = "다시 하기";
-
-  const memory = key === "memory";
-  const value = memory ? result.level : result.adjustedMs;
-  const valueText = formatGameValue(key, value);
-  const completed = memory ? result.level >= 3 : result.correct >= 10;
-  const detailBase = memory
-    ? `숫자 ${result.level}개까지 기억했어요`
-    : `${formatSeconds(result.timeMs)} · 틀린 문제 ${result.wrong}개${result.wrong ? ` (+${(result.adjustedMs - result.timeMs) / 1000}초)` : ""}`;
-
-  openResult({
-    eyebrow: config.label,
-    title: completed ? "완료!" : "조금 더 힘내요!",
-    time: valueText,
-    detail: canSaveGame() ? `${detailBase} · 저장하는 중…` : `${detailBase} · 선생님 계정은 저장되지 않아요.`,
-    again: () => startBrainGame(key),
-    secondaryLabel: "두뇌교실로",
-    secondary: () => showPage("games"),
-  });
-  if (!canSaveGame()) return;
-
-  const areaScoreValue = memory ? scoreMemory(result.level) : key === "calc" ? scoreCalc(result.adjustedMs) : scoreFocus(result.adjustedMs);
-  const [points, record] = await Promise.allSettled([
-    awardCategoryPractice(key,areaScoreValue,completed),
-    saveGameRecord(key, value, result),
-  ]);
-  const rank = await getGameRank(key, currentUser.uid).catch(() => null);
-
-  const lines = [detailBase];
-  if (points.status === "rejected") lines.push("포인트를 반영하지 못했어요");
-  else if (points.value > 0) lines.push(`+${points.value}P`);
-  else if (completed) lines.push("이 영역의 오늘 연습 보상은 이미 받았어요");
-  else lines.push(memory ? "숫자 3개 이상 성공하면 포인트를 받아요" : "10문제 이상 맞히면 포인트를 받아요");
-  if (record.status === "fulfilled" && record.value) lines.push("이번 달 최고 기록!");
-  lines.push(`${AREAS[config.area].label} +${areaScoreValue}점`);
-  if (rank) lines.push(`이번 달 ${rank}위`);
-  $("#result-detail").textContent = lines.join(" · ");
-}
-
-async function awardCategoryPractice(key,score,completed) {
-  const client=freeClient(db,currentUser);
-  try{return await client.completeLegacy(key,score,completed);}finally{client.stop();}
-}
-
-async function saveGameRecord(key, value, result) {
-  if (key === "memory" && value < 1) return false;
-  const month = kstMonthKey(serverNow());
-  const lowerIsBetter = BRAIN_GAMES[key].lowerIsBetter;
-  const outcome = await runTransaction(ref(db, `records/${month}/${key}/${currentUser.uid}`), (current) => {
-    if (current) {
-      const old = Number(current.value);
-      if (lowerIsBetter ? old <= value : old >= value) return undefined;
-    }
-    return { name: currentProfile?.name ?? "학생", value, wrong: Number(result.wrong ?? 0), at: serverNow() };
-  });
-  return outcome.committed;
-}
-
-async function getGameRank(key, uid) {
-  const month = kstMonthKey(serverNow());
-  const snapshot = await get(ref(db, `records/${month}/${key}`));
-  const rows = [];
-  snapshot.forEach((child) => {
-    rows.push({ uid: child.key, value: Number(child.val().value) });
-  });
-  rows.sort((a, b) => (BRAIN_GAMES[key].lowerIsBetter ? a.value - b.value : b.value - a.value));
-  const index = rows.findIndex((row) => row.uid === uid);
-  return index >= 0 ? index + 1 : null;
-}
-
-function formatGameValue(key, value) {
-  if (value === null || value === undefined) return "-";
-  return key === "memory" ? `${value}개` : formatSeconds(value);
 }
 
 // ── 두뇌 지수 ───────────────────────────────────────────────
@@ -1569,15 +1328,7 @@ function kstDay(ms) {
   return Math.floor((ms + KST_OFFSET_MS) / DAY_MS);
 }
 
-function previousMonthKey(monthKey) {
-  const [year, month] = monthKey.split("-").map(Number);
-  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
-}
 
-function kstMonthKey(ms) {
-  const date = new Date(ms + KST_OFFSET_MS);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 
 function formatKoreanDate(ms) {
   return new Intl.DateTimeFormat("ko-KR", {
@@ -1595,9 +1346,6 @@ function greetingByHour() {
   return "오늘 하루 수고했어요!";
 }
 
-function formatSeconds(ms) {
-  return `${(Number(ms) / 1000).toFixed(2)}초`;
-}
 
 function formatNumber(value) {
   return Number(value ?? 0).toLocaleString("ko-KR");

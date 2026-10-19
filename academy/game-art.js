@@ -7,7 +7,7 @@ const INK = '#3b2f25';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // domain.mjs 의 그림두더지 이모지를 저장소 그림으로 바꿔 보여준다(문제 생성 규칙은 그대로).
-const ANIMALS = { '🐱': 'cat', '🐶': 'dog', '🐼': 'panda', '🐸': 'frog', '🐙': 'pig', '🦊': 'chick', '🐰': 'rabbit', '🐵': 'monkey', '🐨': 'koala' };
+const ANIMALS = { '🐱': 'cat', '🐶': 'dog', '🐼': 'panda', '🐸': 'frog', '🐷': 'pig', '🐥': 'chick', '🐰': 'rabbit', '🐵': 'monkey', '🐨': 'koala', '🐧': 'penguin', '🐭': 'mouse', '🐻': 'bear', '🐙': 'pig', '🦊': 'chick' };
 const animal = (emoji, size = 72) => `<img class="animal" src="${asset(`animal-${ANIMALS[emoji] ?? 'bear'}.webp`)}" width="${size}" height="${size}" alt="${ANIMALS[emoji] ?? '동물'}" draggable="false" />`;
 
 const ARROW_ANGLE = { '→': 0, '↓': 90, '←': 180, '↑': 270 };
@@ -23,19 +23,29 @@ const SHAPES = {
 const SHAPE_NAME = { '●': '동그라미', '▲': '세모', '■': '네모', '◆': '마름모' };
 const shape = (ch, size = 44) => `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><g stroke="${INK}" stroke-width="3.5" stroke-linejoin="round">${SHAPES[ch]?.(size) ?? ''}</g></svg>`;
 
+const PIECE_COLORS = ['#ff8a65', '#ffd23f', '#7cc4ff', '#8fe0a0', '#c7a3ff', '#ffb067', '#ff9ad5', '#9be7e4', '#f6a21b', '#b5d86b'];
+
+// 열 높이로 목표 모양을 그린다(아래부터 채움).
+function heightGrid(heights, rows) {
+  const cells = [];
+  for (let row = rows - 1; row >= 0; row--) heights.forEach((h) => cells.push(`<i class="${row < h ? 'on' : ''}"></i>`));
+  return `<span class="mini-grid is-goal" style="grid-template-columns:repeat(${heights.length},16px)">${cells.join('')}</span>`;
+}
+
 export function miniGrid(values, cls = '') {
   return `<span class="mini-grid ${cls}">${values.map((v) => `<i class="${v ? 'on' : ''}"></i>`).join('')}</span>`;
 }
 
 // 저울: "A < B" 관계마다 오른쪽(무거운 쪽)이 내려간 시소를 그린다.
-function seesaw(relation) {
-  const [light, heavy] = relation.split('<').map((s) => s.trim());
+// 받침대는 위가 뾰족한 삼각형. flip이면 무거운 쪽이 왼쪽에 온다.
+function seesaw({ light, heavy, flip = false }) {
+  const [left, right] = flip ? [heavy, light] : [light, heavy];
   return `<svg class="seesaw" viewBox="0 0 150 92" aria-label="${SHAPE_NAME[light]}보다 ${SHAPE_NAME[heavy]}이(가) 무거움">
-    <path d="M75 86 L62 62 H88Z" fill="#c9a36b" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>
-    <g transform="rotate(12 75 60)">
-      <rect x="14" y="56" width="122" height="8" rx="4" fill="#e8c88f" stroke="${INK}" stroke-width="3.5"/>
-      <g transform="translate(18 18)">${shape(light, 38)}</g>
-      <g transform="translate(94 18)">${shape(heavy, 38)}</g>
+    <path d="M75 60 L60 88 H90Z" fill="#c9a36b" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>
+    <g transform="rotate(${flip ? -12 : 12} 75 60)">
+      <rect x="14" y="52" width="122" height="8" rx="4" fill="#e8c88f" stroke="${INK}" stroke-width="3.5"/>
+      <g transform="translate(18 14)">${shape(left, 38)}</g>
+      <g transform="translate(94 14)">${shape(right, 38)}</g>
     </g></svg>`;
 }
 
@@ -101,16 +111,23 @@ function towers(heights, direction) {
     }
   }
   const floor = `<polygon points="${project(0, 0, 0)} ${project(3, 0, 0)} ${project(3, 3, 0)} ${project(0, 3, 0)}" fill="#efe3c4" stroke="${INK}" stroke-width="2"/>`;
-  const eye = direction
-    ? `<g class="eye-mark"><path d="M214 92 l-22 -10" stroke="#e8590c" stroke-width="5" stroke-linecap="round"/><path d="M190 76 l2 10 l10 -2" fill="none" stroke="#e8590c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><text x="210" y="116" class="svg-label">여기서 봐요</text></g>`
-    : `<g class="eye-mark"><path d="M46 92 l22 -10" stroke="#e8590c" stroke-width="5" stroke-linecap="round"/><path d="M60 76 l8 6 l-6 8" fill="none" stroke="#e8590c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><text x="44" y="116" class="svg-label">여기서 봐요</text></g>`;
-  return `<svg viewBox="20 -50 230 190" class="tower-art" role="img" aria-label="${direction ? '오른쪽' : '앞'}에서 볼 블록 탑">${floor}<g stroke="${INK}" stroke-width="1.6" stroke-linejoin="round">${cubes}</g>${eye}</svg>`;
+  // 앞 = 왼쪽 아래 면, 오른쪽 = 오른쪽 아래 면. 눈에서 그 면을 향해 화살표를 그린다.
+  const eyeAt = (x, y, dx, dy, labelX) => `<g class="eye-mark">
+      <ellipse cx="${x}" cy="${y}" rx="13" ry="9" fill="#fff" stroke="${INK}" stroke-width="3"/><circle cx="${x + dx * 4}" cy="${y + dy * 4}" r="4.5" fill="${INK}"/>
+      <path d="M${x + dx * 18} ${y + dy * 18} L${x + dx * 40} ${y + dy * 40}" stroke="#e8590c" stroke-width="5" stroke-linecap="round"/>
+      <path d="M${x + dx * 40 - dx * 9 + dy * 8} ${y + dy * 40 - dy * 9 - dx * 8} L${x + dx * 40} ${y + dy * 40} L${x + dx * 40 - dx * 9 - dy * 8} ${y + dy * 40 - dy * 9 + dx * 8}" fill="none" stroke="#e8590c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="${labelX}" y="${y + 26}" class="svg-label">여기서 봐요</text></g>`;
+  const eye = direction ? eyeAt(206, 128, -0.71, -0.71, 206) : eyeAt(54, 128, 0.71, -0.71, 54);
+  return `<svg viewBox="20 -50 230 210" class="tower-art" role="img" aria-label="${direction ? '오른쪽' : '앞'}에서 볼 블록 탑">${floor}<g stroke="${INK}" stroke-width="1.6" stroke-linejoin="round">${cubes}</g>${eye}</svg>`;
 }
 
 const projection = (cols) => `<span class="projection">${cols.map((h) => `<i style="--h:${h}">${'<b></b>'.repeat(h)}</i>`).join('')}</span>`;
 
 // 풍선: 숫자마다 색을 돌려가며 쓴다.
 const BALLOON_COLORS = ['#ff8fa3', '#ffd23f', '#7cc4ff', '#8fe0a0', '#c7a3ff', '#ffb067', '#ff9ad5', '#9be7e4'];
+const STROOP_INK = '#3b2f25';
+// 다시 그려도 둥실거림이 끊기지 않게, 지금 시각에 맞춘 음수 지연을 준다.
+const drift = (time, i, period) => `-${(((time || 0) / 1000) + i * 0.83) % period}s`;
 
 /**
  * 문제 화면 HTML.
@@ -119,7 +136,7 @@ const BALLOON_COLORS = ['#ff8fa3', '#ffd23f', '#7cc4ff', '#8fe0a0', '#c7a3ff', '
  * @param {{preview:boolean, lit:number, selected:number[]}} view
  */
 export function renderQuestion(game, q, view) {
-  const { preview, lit, selected } = view;
+  const { preview, lit, selected, time = 0 } = view;
   const picked = (i) => selected.includes(i);
   const disabled = (i) => (preview || picked(i) ? 'disabled' : '');
   let stage = '';
@@ -131,7 +148,7 @@ export function renderQuestion(game, q, view) {
     case 'mole': {
       prompt = '같은 그림을 찾아 톡!';
       stage = `<div class="target-card">${animal(q.choices[q.answer[0]], 84)}</div>`;
-      layout = 'grid-3';
+      layout = q.choices.length > 9 ? 'grid-4 mole-many' : 'grid-3';
       choices = q.choices.map((c, i) => `<button class="tile tile-pic" data-answer="${i}" aria-label="${ANIMALS[c] ?? '그림'}" ${disabled(i)}>${animal(c, 64)}</button>`).join('');
       break;
     }
@@ -143,6 +160,22 @@ export function renderQuestion(game, q, view) {
       choices = q.choices.map((c, i) => `<button class="tile tile-arrow" data-answer="${i}" aria-label="${ARROW_NAME[c]}" ${disabled(i)}>${arrow(c, 46, '#ffe08a')}</button>`).join('');
       break;
     }
+    case 'stroop': {
+      prompt = '글자의 <b>색깔</b>은?';
+      stage = `<div class="stroop-word" style="color:${q.ink}">${esc(q.word)}</div>`;
+      layout = q.choices.length > 4 ? 'grid-3' : 'grid-2';
+      choices = q.choices.map((c, i) => `<button class="tile tile-color" data-answer="${i}" ${disabled(i)}><i class="swatch" style="--sw:${q.colors[i]}"></i><span style="color:${q.labelColors?.[i] ?? STROOP_INK}">${esc(c)}</span></button>`).join('');
+      break;
+    }
+    case 'calc': {
+      prompt = '답을 입력하세요';
+      const typed = selected.map((i) => q.choices[i]).join('');
+      stage = `<div class="calc-q"><b>${esc(q.prompt)}</b><span class="calc-answer">${Array.from({ length: q.answer.length }, (_, i) => `<i>${esc(typed[i] ?? '')}</i>`).join('')}</span></div>`;
+      layout = 'grid-3 numpad-grid';
+      choices = q.choices.map((c, i) => `<button class="tile tile-num ${c === '0' ? 'is-zero' : ''}" data-answer="${i}" ${preview ? 'disabled' : ''}>${c}</button>`).join('')
+        + '<button id="brain-backspace" class="tile tile-num is-back" type="button" aria-label="지우기">⌫</button>';
+      break;
+    }
     case 'largest': {
       prompt = '<b>값</b>이 가장 큰 숫자는?';
       layout = 'grid-2';
@@ -152,13 +185,16 @@ export function renderQuestion(game, q, view) {
     case 'balloons': {
       prompt = '작은 수부터 차례로 펑!';
       layout = 'balloon-field';
-      choices = q.choices.map((c, i) => `<button class="balloon ${picked(i) ? 'is-popped' : ''}" data-answer="${i}" style="--c:${BALLOON_COLORS[i % BALLOON_COLORS.length]};--d:${(i % 3) * 0.4}s" ${disabled(i)}><span>${esc(c)}</span></button>`).join('');
+      choices = q.choices.map((c, i) => {
+        const state = picked(i) ? (selected.at(-1) === i ? 'is-popping' : 'is-gone') : '';
+        return `<button class="balloon ${state}" data-answer="${i}" style="--c:${BALLOON_COLORS[i % BALLOON_COLORS.length]};--d:${drift(time, i, 4.2)}" ${disabled(i)}><span>${esc(c)}</span></button>`;
+      }).join('');
       break;
     }
     case 'memory':
     case 'sequence': {
       prompt = preview ? (game === 'memory' ? '숫자 위치를 기억하세요!' : '켜지는 순서를 기억하세요!') : (game === 'memory' ? '작은 숫자가 있던 칸부터 톡!' : '켜졌던 순서대로 톡!');
-      layout = 'grid-3 memory-board';
+      layout = `memory-board size-${q.size ?? 3}`;
       choices = q.choices.map((c, i) => {
         const shown = preview && game === 'memory' && c;
         const isLit = preview && game === 'sequence' && q.answer[lit] === i;
@@ -168,15 +204,24 @@ export function renderQuestion(game, q, view) {
       break;
     }
     case 'blocks': {
-      prompt = '블록을 빼서 목표 모양을 만드세요';
-      stage = `<div class="goal-box"><span class="goal-label">목표</span>${miniGrid(q.target, 'is-goal')}</div>`;
-      layout = 'grid-3 block-board';
-      choices = q.choices.map((_, i) => `<button class="tile tile-block ${picked(i) ? 'is-removed' : ''}" data-answer="${i}" aria-label="${i + 1}번 블록${picked(i) ? ' (뺌)' : ''}" ${disabled(i)}></button>`).join('');
+      prompt = '조각을 눌러 없애고 목표 모양을 만드세요';
+      stage = `<div class="goal-box"><span class="goal-label">목표</span>${heightGrid(q.target, q.height)}</div>`;
+      layout = 'tetris-board';
+      // 열마다 남은 칸을 아래로 모은다(위 블록이 떨어짐).
+      const columns = Array.from({ length: q.width }, (_, c) => Array.from({ length: q.height }, (_, row) => q.owner[row * q.width + c]).filter((o) => o >= 0 && !picked(o)));
+      const cells = [];
+      for (let row = q.height - 1; row >= 0; row--) for (let c = 0; c < q.width; c++) {
+        const o = columns[c][row];
+        cells.push(o === undefined ? '<span class="tetris-cell is-empty"></span>' : `<button class="tetris-cell" data-answer="${o}" style="--c:${PIECE_COLORS[o % PIECE_COLORS.length]}" aria-label="조각 ${o + 1}" ${preview ? 'disabled' : ''}></button>`);
+      }
+      choices = cells.join('');
+      layout += `" style="--w:${q.width}`;
       break;
     }
     case 'balance': {
       prompt = '가장 무거운 것은?';
-      const relations = q.prompt.split(/\s{2,}/).filter(Boolean);
+      prompt = q.ask === 'light' ? '가장 <b>가벼운</b> 것은?' : '가장 <b>무거운</b> 것은?';
+      const relations = q.relations ?? q.prompt.split(/\s{2,}/).filter(Boolean).map((x) => { const [light, heavy] = x.split('<').map((t) => t.trim()); return { light, heavy }; });
       stage = `<div class="seesaw-row">${relations.map(seesaw).join('')}</div><p class="stage-note">내려간 쪽이 더 무거워요</p>`;
       layout = 'grid-4';
       choices = q.choices.map((c, i) => `<button class="tile tile-shape" data-answer="${i}" aria-label="${SHAPE_NAME[c]}" ${disabled(i)}>${shape(c, 48)}</button>`).join('');
@@ -193,8 +238,9 @@ export function renderQuestion(game, q, view) {
       const left = q.numbers.filter((_, i) => !picked(i)).reduce((a, b) => a + b, 0);
       prompt = `필요 없는 블록을 부숴 합을 <b>${q.targetSum}</b>(으)로!`;
       stage = `<div class="sum-meter"><span>남은 합</span><b class="${left === q.targetSum ? 'is-match' : ''}">${left}</b><span>목표 ${q.targetSum}</span></div>`;
-      layout = 'grid-3';
-      choices = q.numbers.map((n, i) => `<button class="tile tile-hammer ${picked(i) ? 'is-smashed' : ''}" data-answer="${i}" aria-label="${n}${picked(i) ? ' (부숨)' : ''}" ${disabled(i)}>${n}</button>`).join('');
+      // 숫자 블록을 쌓은 탑. 부순 블록은 빠지고 위 블록이 내려앉는다.
+      layout = 'hammer-tower';
+      choices = q.numbers.map((n, i) => (picked(i) ? '' : `<button class="tower-block" data-answer="${i}" style="--c:${PIECE_COLORS[i % PIECE_COLORS.length]}" aria-label="${n} 블록 부수기" ${disabled(i)}>${n}</button>`)).join('');
       break;
     }
     case 'pieces': {
@@ -222,7 +268,7 @@ export function renderQuestion(game, q, view) {
       choices = q.choices.map((c, i) => `<button class="tile" data-answer="${i}" ${disabled(i)}>${esc(c)}</button>`).join('');
   }
 
-  const confirm = ['sum', 'remove'].includes(q.type)
+  const confirm = ['sum', 'remove', 'tetris'].includes(q.type)
     ? `<div class="confirm-row"><button id="brain-reset" class="btn btn-ghost" type="button">되돌리기</button><button id="brain-confirm" class="btn btn-go" type="button">완성!</button></div>`
     : '';
   return `<p class="q-prompt">${prompt}</p>${stage ? `<div class="q-stage">${stage}</div>` : ''}${preview ? '<p class="remember-label">기억하세요…</p>' : ''}<div class="choices ${layout}">${choices}</div>${confirm}`;

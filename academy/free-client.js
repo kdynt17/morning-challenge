@@ -1,6 +1,5 @@
 import {ref,get,set,runTransaction,onValue} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
-import {dayKey,closesAt,lineup,GAMES,roundMs,scoreRound,rankings,dailyReward} from './functions/domain.mjs';
-import {AREA_REFERENCE} from './brain-score.js';
+import {dayKey,closesAt,lineup,GAMES,roundMs,areaPoints,scoreRound,rankings,dailyReward} from './functions/domain.mjs';
 
 // Spark classroom edition. Awards and retry markers share the original student balance transaction.
 // Like the original app, this trusts approved students; it is not server-side anti-cheat.
@@ -30,16 +29,6 @@ export function freeClient(db,user){
     if(reason)throw Error(reason);
     await publishPoints();
     return tx.committed ? claim.amount : 0;
-  }
-  async function completeLegacy(game,score,completed=true){
-    const category={calc:3,stroop:0,memory:1}[game];
-    if(category===undefined||!Number.isFinite(score)||score<0||score>100)throw Error('게임 기록을 확인해주세요.');
-    const day=dayKey(now()),dayEnd=closesAt(day);
-    if(!(await get(ref(db,`academy/sessions/${user.uid}/${dayEnd}/done`))).val())throw Error('오늘 5영역 도전을 먼저 완료해주세요.');
-    const normalized=Math.round(AREA_REFERENCE[category]*score/100);
-    await runTransaction(ref(db,`academy/history/${user.uid}/${category}`),h=>[...(h||[]),normalized].slice(-7));
-    if(!completed)return 0;
-    return award({key:`practice_${dayEnd}_${category}`,kind:'practice',dayEnd,category,bit:2**category,amount:10,day});
   }
   async function settle(){
     const sessions=(await get(ref(db,`academy/sessions/${user.uid}`))).val()||{};
@@ -85,7 +74,7 @@ export function freeClient(db,user){
         await runTransaction(path,current=>!current||(current.id===s.id&&current.stage===input.stage)?next:undefined,{applyLocally:false});
         s=(await get(path)).val();
         const category=GAMES.find(g=>g.id===game).category;
-        await runTransaction(ref(db,`academy/history/${user.uid}/${category}`),h=>[...(h||[]),result.score].slice(-7));
+        await runTransaction(ref(db,`academy/history/${user.uid}/${category}`),h=>[...(h||[]),areaPoints(game,result.score)].slice(-7));
         await runTransaction(ref(db,`academy/best/${game}/${user.uid}`),best=>!best||best.score<result.score?{name:profile.name,score:result.score}:undefined);
       }
     }
@@ -95,5 +84,5 @@ export function freeClient(db,user){
     }
     return {data:{session:s,serverNow:now()}};
   }
-  return {action,settle,stop,completeLegacy};
+  return {action,settle,stop};
 }

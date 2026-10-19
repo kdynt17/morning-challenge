@@ -9,12 +9,25 @@ const fmt = (n) => Number(n || 0).toLocaleString('ko-KR');
 const gameOf = (id) => GAMES.find((g) => g.id === id);
 const MEDALS = ['🥇', '🥈', '🥉'];
 const RANK_LIMIT = 10;
-// 원래 앱의 20문제·단계형 게임. 같은 영역 연습으로 치고, 메인 앱 화면에서 바로 열린다.
-const CLASSIC_GAMES = [
-  { id: 'stroop', category: 0, name: '색깔 판단', help: '글자 뜻이 아닌 색깔을 골라요. 20문제 중 10문제 이상 맞히면 완료.' },
-  { id: 'memory', category: 1, name: '순간 기억 · 단계 도전', help: '숫자 위치를 기억해요. 숫자 3개 이상 성공하면 완료.' },
-  { id: 'calc', category: 3, name: '계산 20', help: '20문제를 빨리 풀어요. 10문제 이상 맞히면 완료.' },
-];
+// 연습 전에 보여주는 설명서. '다시 보지 않기'를 누르면 그 게임은 바로 시작한다.
+export const GUIDE_HIDDEN_PREFIX = 'mc.tutorialHidden.';
+const GUIDES = {
+  mole: ['위에 나온 동물과 같은 그림을 톡!', '그림이 3개에서 시작해 12개까지 늘어나요.', '빨리 맞힐수록 연속 보너스가 붙어요.'],
+  focus: ['다섯 화살표 중 가운데 화살표만 보세요.', '양옆 화살표는 일부러 헷갈리게 해요.', '한 판 20초! 빠르게 골라요.'],
+  largest: ['글자 크기에 속지 마세요.', '값이 가장 큰 숫자를 골라요.', '소수와 음수도 나와요.'],
+  stroop: ['글자 뜻이 아니라 칠해진 색깔을 골라요.', "예: 파란색으로 쓴 '빨강' → 정답은 파랑", '갈수록 색이 늘고 보기 글자 색도 헷갈려져요.'],
+  memory: ['숫자가 잠깐 보였다가 사라져요.', '작은 수가 있던 칸부터 차례로 누르세요.', '판이 3×3 → 4×4 → 5×5로 커지고, 숫자도 1·3·5·7·10처럼 띄엄띄엄 나와요.'],
+  sequence: ['칸에 차례로 불이 켜져요.', '켜진 순서 그대로 누르세요.', '갈수록 칸이 늘고 불이 빨리 켜져요.'],
+  blocks: ['같은 색 블록 묶음이 한 조각이에요.', '조각을 누르면 통째로 사라지고 위 블록이 떨어져요.', '목표 모양이 되면 "완성!"을 누르세요.'],
+  balance: ['시소에서 내려간 쪽이 더 무거워요.', '처음엔 두 개만 비교, 갈수록 도형이 늘어요.', '가장 가벼운 것을 묻는 문제도 나와요.'],
+  ladder: ['? 칸에 가로선 하나를 넣어요.', '출발 번호에서 내려가 도착 번호에 닿게 만드세요.', '처음엔 쉽고 갈수록 가로선이 늘어요.'],
+  hammer: ['숫자 블록이 탑처럼 쌓여 있어요.', '필요 없는 블록을 눌러 깡! 부수면 위 블록이 내려와요.', '남은 합이 목표와 같으면 "완성!"'],
+  balloons: ['풍선이 둥실둥실 떠다녀요.', '작은 수부터 차례로 펑! 터뜨리세요.', '한 자리 → 두 자리 → 음수 → 소수 순서로 어려워져요.'],
+  calc: ['계산 답을 숫자판으로 입력해요(PC는 키보드도 돼요).', '자리 수를 다 채우면 바로 채점해요. ⌫로 지울 수 있어요.', '덧셈 → 뺄셈 → 곱셈 → 두 자리 계산으로 어려워져요.'],
+  pieces: ['목표 모양을 보세요.', '가진 조각과 겹치지 않게 합쳐 목표를 채울 조각을 골라요.', '빨리 맞힐수록 연속 보너스!'],
+  rail: ['기차가 출발부터 도착까지 가야 해요.', '? 칸에 들어갈 선로 모양을 골라요.', '앞뒤 선로와 이어지는지 확인하세요.'],
+  view: ['블록 탑을 눈(화살표) 쪽에서 본다고 생각하세요.', '앞에서 보면 줄마다 가장 높은 블록만 보여요.', '보이는 높이 모양을 골라요.'],
+};
 const seconds = (ms) => Math.round(ms / 1000);
 const areaTime = (i) => { const t = GAMES.filter((g) => g.category === i).map((g) => seconds(roundMs(g.id))); return Math.min(...t) === Math.max(...t) ? `${t[0]}초` : `${Math.min(...t)}~${Math.max(...t)}초`; };
 
@@ -46,7 +59,7 @@ export function radar(values, { compare = null } = {}) {
 export function criteria(me) {
   const next = me.grams === null ? null : [...GRADES].reverse().find((g) => g.min > me.grams);
   return `<details class="criteria"><summary>오각형은 언제 꽉 차나요?</summary>
-    <p>영역마다 <b>최근 7번 점수의 평균</b>을 아래 기준 점수와 비교해요. 기준 점수를 내면 그 영역이 <b>100(꽉 참)</b>이에요. 실수 없이 아주 빠르게 풀어야 닿는 점수예요.</p>
+    <p>영역마다 <b>최근 7번 점수의 평균</b>을 아래 기준 점수와 비교해요. 게임마다 한 판 시간이 달라서 점수는 <b>40초 한 판</b>으로 맞춰 계산해요. 기준 점수를 내면 그 영역이 <b>100(꽉 참)</b>이에요. 실수 없이 아주 빠르게 풀어야 닿는 점수예요.</p>
     <table class="criteria-table"><thead><tr><th>영역</th><th>꽉 차는 점수</th><th>한 판</th><th>지금</th></tr></thead><tbody>
       ${AREAS.map((a, i) => `<tr><td>${a.label}</td><td>${fmt(AREA_REFERENCE[i])}점</td><td>${areaTime(i)}</td><td><b>${me.areas[i] ?? '-'}</b>/100</td></tr>`).join('')}
     </tbody></table>
@@ -67,7 +80,7 @@ function areaChips(values) {
   return `<div class="area-chips">${AREAS.map((a, i) => `<span class="area-chip" style="--cat:${a.color}"><img src="${a.icon}" alt="" width="22" height="22"/>${a.label}<b>${values[i] ?? '-'}</b></span>`).join('')}</div>`;
 }
 
-export function mountBrain({ app, db, user, root, onClassic = null }) {
+export function mountBrain({ app, db, user, root }) {
   const transport = freeClient(db, user);
   const call = transport.action;
   let day = dayKey(), daily = {}, best = {}, profile = {}, history = {}, session = null, events = [], selected = [], index = 0, q = null, questionAt = 0, offset = 0, busy = false, disposed = false;
@@ -154,10 +167,7 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
               <button class="practice-toggle" type="button" data-open="${g.id}" aria-expanded="${openGame === g.id}"><b>${esc(g.name)}</b><span>${esc(g.help)}</span></button>
               ${openGame === g.id ? `<div class="practice-detail">${board(best[g.id] || {}, 3)}</div>` : ''}
               <button data-practice="${g.id}" class="btn btn-go btn-small" type="button" ${mine ? '' : 'disabled'}>연습</button>
-            </div>`).join('')}${onClassic ? CLASSIC_GAMES.filter((g) => g.category === i).map((g) => `<div class="practice-game">
-              <div class="practice-toggle"><b>${esc(g.name)}</b><span>${esc(g.help)}</span></div>
-              <button data-classic="${g.id}" class="btn btn-go btn-small" type="button" ${mine ? '' : 'disabled'}>연습</button>
-            </div>`).join('') : ''}</div>
+            </div>`).join('')}</div>
         </div>`).join('')}
       </section>`;
 
@@ -165,8 +175,7 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
     root.querySelector('#brain-show-result')?.addEventListener('click', () => { showResult = true; dashboard(); });
     root.querySelector('#brain-ranks').onclick = () => { showTop10 = !showTop10; dashboard(); };
     root.querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => { openGame = openGame === b.dataset.open ? null : b.dataset.open; dashboard(); }; });
-    root.querySelectorAll('[data-practice]').forEach((b) => { b.onclick = () => start('practice', b.dataset.practice); });
-    root.querySelectorAll('[data-classic]').forEach((b) => { b.onclick = () => onClassic?.(b.dataset.classic); });
+    root.querySelectorAll('[data-practice]').forEach((b) => { b.onclick = () => practice(b.dataset.practice); });
   }
 
   // 하루 도전 결과: 말랑그램 + 오각형 + 박사 코멘트 (DS "테스트 종료" 화면)
@@ -187,6 +196,30 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
         <button id="brain-result-close" class="btn btn-go btn-big" type="button">연습하러 가기</button>
       </section>`;
     root.querySelector('#brain-result-close').onclick = () => { showResult = false; dashboard(); window.scrollTo({ top: 0 }); };
+  }
+
+  // 설명서를 먼저 보여주고(숨기지 않았다면) 연습을 시작한다.
+  function practice(id) {
+    let hidden = false;
+    try { hidden = localStorage.getItem(GUIDE_HIDDEN_PREFIX + id) === '1'; } catch { /* 저장소를 못 쓰면 매번 보여준다 */ }
+    if (hidden) { start('practice', id); return; }
+    const g = gameOf(id), overlay = document.createElement('div');
+    overlay.className = 'guide-overlay';
+    overlay.innerHTML = `<section class="guide-card" role="dialog" aria-modal="true" aria-labelledby="brain-guide-title">
+        ${professorSays(`<b>${esc(g.name)}</b>, 이렇게 해요!`)}
+        <h3 id="brain-guide-title">${esc(g.name)} 설명서 <small>· 한 판 ${seconds(roundMs(id))}초</small></h3>
+        <ol>${(GUIDES[id] ?? [g.help]).map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
+        <label class="guide-hide"><input id="brain-guide-hide" type="checkbox"/> 다시 보지 않기</label>
+        <button id="brain-guide-start" class="btn btn-go" type="button">확인, 시작할게요</button>
+        <button id="brain-guide-cancel" class="btn btn-ghost" type="button">닫기</button>
+      </section>`;
+    document.body.append(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector('#brain-guide-cancel').onclick = close;
+    overlay.querySelector('#brain-guide-start').onclick = () => {
+      if (overlay.querySelector('#brain-guide-hide').checked) { try { localStorage.setItem(GUIDE_HIDDEN_PREFIX + id, '1'); } catch { /* 무시 */ } }
+      close(); start('practice', id);
+    };
   }
 
   async function start(mode, game) {
@@ -220,6 +253,7 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
           <div><p class="eyebrow">${session.mode === 'daily' ? `${session.stage + 1} / 5 · ${area.label}` : `자유 연습 · ${area.label}`}</p><h2>${esc(game.name)}</h2></div>
           <div class="score-badge"><b id="brain-score">0</b><small>점</small></div>
         </header>
+        <p class="game-help">${esc(game.help)}</p>
         <div class="timer-row"><div class="timer-bar"><i id="brain-bar"></i></div><strong id="brain-time">${seconds(roundMs(game.id))}</strong></div>
         <div class="q-area"><div id="brain-question"></div><span id="brain-stamp" class="stamp" aria-hidden="true"></span></div>
         <p id="brain-feedback" class="feedback" role="status"></p>
@@ -245,6 +279,13 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
     session = null; lastPaint = ''; errorText = '';
     dashboard(); window.scrollTo({ top: 0 });
   }
+  // PC에서는 계산 게임을 키보드 숫자로도 입력한다.
+  const onKey = (e) => {
+    if (!session || session.done || q?.type !== 'digits') return;
+    if (/^[0-9]$/.test(e.key)) choose(e.key === '0' ? 9 : Number(e.key) - 1);
+    else if (e.key === 'Backspace') { selected.pop(); lastPaint = ''; }
+  };
+  document.addEventListener('keydown', onKey);
   const onPop = () => { if (session && !session.done && window.history.state?.brainPlay !== session.id) exitGame(); };
   window.addEventListener('popstate', onPop);
 
@@ -278,7 +319,8 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
     const lit = game === 'sequence' && preview ? Math.floor(age / (q.flash || 650)) : -1;
     const stamp = `${index}:${preview}:${lit}:${selected.join(',')}`; if (stamp === lastPaint) return; lastPaint = stamp;
     const host = root.querySelector('#brain-question');
-    host.innerHTML = renderQuestion(game, q, { preview, lit, selected });
+    host.innerHTML = renderQuestion(game, q, { preview, lit, selected, time });
+    host.querySelector('#brain-backspace')?.addEventListener('click', () => { selected.pop(); lastPaint = ''; });
     host.querySelectorAll('[data-answer]').forEach((b) => { b.onclick = () => choose(Number(b.dataset.answer)); });
     host.querySelector('#brain-confirm')?.addEventListener('click', () => answer(selected));
     host.querySelector('#brain-reset')?.addEventListener('click', () => { selected = []; lastPaint = ''; });
@@ -287,6 +329,8 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
   function choose(i) {
     if (now() < questionAt + Math.max(180, q.preview) || now() >= session.startedAt + roundMs(session.games[session.stage])) return;
     if (q.type === 'choice') { answer([i]); return; }
+    // 계산: 같은 숫자를 여러 번 누를 수 있고, 자리 수를 다 채우면 바로 채점한다.
+    if (q.type === 'digits') { selected.push(i); lastPaint = ''; if (selected.length === q.answer.length) answer(selected); return; }
     if (selected.includes(i)) return; selected.push(i); lastPaint = '';
     if (['memory', 'sequence'].includes(q.type)) {
       if (q.answer[selected.length - 1] !== i || selected.length === q.answer.length) answer(selected);
@@ -331,7 +375,7 @@ export function mountBrain({ app, db, user, root, onClassic = null }) {
     const next = dayKey(now());
     if (next !== day) { day = next; session = null; showResult = false; clearInterval(gameClock); errorText = '오전 6시, 새로운 두뇌 체조가 열렸어요!'; watchDay(); dashboard(); transport.settle().catch((e) => { error(e); dashboard(); }); }
   }, 1000);
-  const dispose = () => { disposed = true; window.removeEventListener('popstate', onPop); transport.stop(); subscriptions.forEach((f) => f()); daySub?.(); sessionSub?.(); clearInterval(clock); clearInterval(gameClock); root.innerHTML = ''; };
+  const dispose = () => { disposed = true; window.removeEventListener('popstate', onPop); document.removeEventListener('keydown', onKey); document.querySelector('.guide-overlay')?.remove(); transport.stop(); subscriptions.forEach((f) => f()); daySub?.(); sessionSub?.(); clearInterval(clock); clearInterval(gameClock); root.innerHTML = ''; };
   dispose.exit = exitGame;
   return dispose;
 }

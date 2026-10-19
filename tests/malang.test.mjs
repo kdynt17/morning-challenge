@@ -60,7 +60,7 @@ test('daily reward starts at 100P and drops 5P per rank down to 20P', async () =
 test('every generated question stays answerable at every difficulty level', async () => {
   const { GAMES, question, isCorrect, scoreRound, roundMs } = await import('../academy/functions/domain.mjs');
   for (const game of GAMES) {
-    assert.ok(roundMs(game.id) >= 30000 && roundMs(game.id) <= 45000, game.id);
+    assert.ok(roundMs(game.id) >= 20000 && roundMs(game.id) <= 45000, game.id);
     for (let i = 0; i < 40; i++) {
       const q = question(game.id, `seed-${i}`, i);
       assert.ok(isCorrect(q, q.answer), `${game.id} #${i}`);
@@ -71,4 +71,38 @@ test('every generated question stays answerable at every difficulty level', asyn
     assert.equal(scoreRound(game.id, seed, events).correct, 5);
     assert.throws(() => scoreRound(game.id, seed, [{ at: roundMs(game.id) + 1, selected: [0] }]));
   }
+});
+
+test('new games: merged memory grows, sequence speeds up, tetris blocks fall, calc takes digits, view arrow order', async () => {
+  const { GAMES, question, isCorrect, blockHeights, areaPoints, roundMs } = await import('../academy/functions/domain.mjs');
+  assert.equal(GAMES.length, 15);
+  assert.ok(GAMES.some((g) => g.id === 'stroop') && GAMES.some((g) => g.id === 'calc'));
+  assert.equal(question('mole', 's', 0).choices.length, 3);
+  assert.equal(question('mole', 's', 30).choices.length, 12);
+  assert.equal(roundMs('focus'), 20000);
+  assert.equal(roundMs('ladder'), 30000);
+  assert.equal(question('memory', 's', 0).size, 3);
+  assert.equal(question('memory', 's', 8).size, 4);
+  assert.equal(question('memory', 's', 15).size, 5);
+  assert.ok(question('sequence', 's', 15).flash < question('sequence', 's', 0).flash);
+  assert.equal(question('balance', 's', 0).choices.length, 2);
+  assert.equal(question('ladder', 's', 0).lines.length, 1);
+  assert.ok(question('balloons', 's', 0).choices.every((c) => /^[1-9]$/.test(c)));
+  const calc = question('calc', 's', 12);
+  assert.ok(isCorrect(calc, calc.answer));
+  assert.equal(isCorrect({ ...calc }, calc.answer.slice(0, -1)), false);
+  const b = question('blocks', 's', 9);
+  assert.deepEqual(blockHeights(b, b.answer), b.target);
+  assert.equal(isCorrect(b, []), false);
+  // 오른쪽에서 보면 y가 큰 줄이 왼쪽에 온다.
+  const v = { ...question('view', 's', 0) };
+  for (let i = 0; i < 20; i++) {
+    const q = question('view', `v${i}`, 0);
+    const col = (k) => Math.max(...[0, 1, 2].map((j) => q.heights[q.direction ? k * 3 + j : j * 3 + k]));
+    const seen = q.direction ? [col(2), col(1), col(0)] : [col(0), col(1), col(2)];
+    assert.deepEqual(q.projections[q.answer[0]], seen);
+  }
+  assert.ok(v);
+  assert.equal(areaPoints('focus', 1000), 2000);
+  assert.equal(areaPoints('memory', 900), 800);
 });

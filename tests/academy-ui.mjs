@@ -34,7 +34,7 @@ try{
   await page.clock.install({time:new Date('2026-10-18T00:00:00Z')});
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   await page.locator('#brain-start').waitFor();
-  assert.equal(await page.locator('[data-practice]:disabled').count(),13);
+  assert.equal(await page.locator('[data-practice]:disabled').count(),GAMES.length);
   await page.locator('#brain-start').click();await page.locator('#brain-time').waitFor();
   for(let stage=0;stage<5;stage++){
     if(stage)await page.clock.fastForward(5100);
@@ -42,8 +42,9 @@ try{
     // Submit one generated correct answer via visible controls, including memory/selection games.
     const answer=await page.evaluate(async(stage)=>{const {lineup,question}=await import('/functions/domain.mjs');return question(lineup('2026-10-18')[stage],`2026-10-18:${stage}`,0);},stage);
     await page.clock.fastForward(answer.preview+1000);
-    for(const i of answer.answer)await page.locator(`[data-answer="${i}"]`).click();
-    if(['remove','sum'].includes(answer.type))await page.locator('#brain-confirm').click();
+    // 풍선은 떠다니므로 force 클릭. 블록매치는 같은 조각 칸이 여러 개라 첫 칸을 누른다.
+    for(const i of answer.answer)await page.locator(`[data-answer="${i}"]`).first().click({force:true});
+    if(['remove','sum','tetris'].includes(answer.type))await page.locator('#brain-confirm').click();
     await page.clock.fastForward(61000);
     if(stage<4)await page.waitForFunction(stage=>document.querySelector('.brain-game .eyebrow')?.textContent.startsWith(`${stage+2} /`),stage);
     else await page.locator('.brain-estimate').waitFor();
@@ -55,26 +56,33 @@ try{
   await shot('mobile-result');
   await page.locator('#brain-result-close').click();await page.locator('[data-practice]:not(:disabled)').first().waitFor();
   await shot('mobile-dashboard');
-  assert.equal(await page.locator('[data-practice]').count(),13);
+  assert.equal(await page.locator('[data-practice]').count(),GAMES.length);
+  // 연습 버튼을 누르면 설명서가 먼저 나오고, '다시 보지 않기'를 고르면 다음부터는 바로 시작한다.
+  const practice=async id=>{await page.locator(`[data-practice="${id}"]:not(:disabled)`).click();const guide=page.locator('#brain-guide-start');if(await guide.isVisible())await guide.click();};
+  await page.locator('[data-practice="mole"]').click();await page.locator('#brain-guide-start').waitFor();
+  await shot('guide-mole');
+  await page.locator('#brain-guide-hide').check();await page.locator('#brain-guide-start').click();await page.locator('#brain-back').waitFor();
+  await page.locator('#brain-back').click();await page.locator('[data-practice="mole"]:not(:disabled)').waitFor();
   // 나가기 버튼과 브라우저 뒤로 가기는 연습을 닫고, 다른 게임을 누르면 예전 연습이 아니라 새 게임이 열린다.
   await page.locator('[data-practice="mole"]').click();await page.locator('#brain-back').waitFor();
+  assert.equal(await page.locator('#brain-guide-start').count(),0);
   assert.equal(await page.locator('.brain-game h2').textContent(),'그림두더지');
   assert.equal(await page.locator('#brain-time').textContent(),'30');
   await page.locator('#brain-back').click();await page.locator('[data-practice="view"]:not(:disabled)').waitFor();
-  await page.locator('[data-practice="view"]').click();await page.locator('#brain-back').waitFor();
+  await practice('view');await page.locator('#brain-back').waitFor();
   assert.equal(await page.locator('.brain-game h2').textContent(),'시점추측');
   await page.goBack();await page.locator('[data-practice="rail"]:not(:disabled)').waitFor();
-  await page.locator('[data-practice="rail"]').click();await page.locator('#brain-back').waitFor();
+  await practice('rail');await page.locator('#brain-back').waitFor();
   assert.equal(await page.locator('.brain-game h2').textContent(),'선로잇기');
   await page.locator('#brain-back').click();await page.locator('[data-practice]:not(:disabled)').first().waitFor();
   assert.equal(state.users.tester.points,0);
   for(const game of GAMES){
-    await page.locator(`[data-practice="${game.id}"]`).click();await page.locator('#brain-time').waitFor();await page.clock.fastForward(10000);
+    await practice(game.id);await page.locator('#brain-time').waitFor();await page.clock.fastForward(10000);
     assert.ok(await page.locator('[data-answer]').count()>0);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,game.id+' overflows mobile');
     await shot(`game-${game.id}`);
     await page.clock.fastForward(61000);await page.locator('[data-practice]:not(:disabled)').first().waitFor();
   }
   assert.equal(state.users.tester.points,50);
-  assert.deepEqual(errors,[]);console.log('PASS: five daily rounds, back button/browser back closes practice, new practice replaces old, all 13 practice games, mobile layout, 50P daily cap, no browser errors.');
+  assert.deepEqual(errors,[]);console.log('PASS: five daily rounds, back button/browser back closes practice, new practice replaces old, all 15 practice games with guides, mobile layout, 50P daily cap, no browser errors.');
 }finally{await browser.close();server.close();}

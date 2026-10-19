@@ -11,11 +11,14 @@ export const AREAS = [
   { key: 'perception', label: '지각', color: '#9b6bea', icon: asset('cat-perception.webp') },
 ];
 
-// 한 판에서 이 점수를 내면 그 영역 능력치가 100(오각형 끝까지 꽉 참)이다.
+import { areaPoints } from './functions/domain.mjs';
+
+// 40초 한 판 기준으로 이 점수를 내면 그 영역 능력치가 100(오각형 끝까지 꽉 참)이다.
+// 게임마다 한 판 시간이 달라서(20~45초) 점수를 40초 기준으로 바꿔 비교한다(domain.mjs areaPoints).
 // 정답 하나에 100점, 연속 정답이면 최대 150점. 실수 거의 없이 아주 빠르게 풀어야 닿는 점수로 잡았다.
-// 직감 30초에 정답 약 22개 · 기억 45초에 약 9개 · 분석 약 13개 · 계산 약 9개 · 지각 약 13개.
+// 40초에 직감 정답 약 28개 · 기억 약 9개 · 분석 약 14개 · 계산 약 10개 · 지각 약 13개.
 // 학생 기록이 쌓이면 이 값만 조정하면 된다.
-export const AREA_REFERENCE = [3000, 1300, 1800, 1300, 1800];
+export const AREA_REFERENCE = [4000, 1200, 1900, 1400, 1800];
 
 const MIN_GRAMS = 400;
 const GRAMS_PER_POINT = 3.2; // 다섯 영역이 모두 100이면 400 + 500×3.2 = 2000g
@@ -45,7 +48,7 @@ export function gradeFor(grams) {
 
 // 하루 도전 결과(영역 순서대로 5개)로 그날의 말랑그램을 계산한다.
 export function dailyBrain(results = []) {
-  const areas = AREAS.map((_, i) => (results[i] ? areaScore(i, results[i].score) : 0));
+  const areas = AREAS.map((_, i) => (results[i] ? areaScore(i, results[i].game ? areaPoints(results[i].game, results[i].score) : results[i].score) : 0));
   const grams = gramsFrom(areas);
   return { areas, grams, grade: gradeFor(grams), tip: weakestTip(areas) };
 }

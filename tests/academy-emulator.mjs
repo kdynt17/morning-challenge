@@ -15,28 +15,22 @@ const client=freeClient(db,{uid:'bob'});
 try{
   await root.ref('users/bob').set({name:'테스트 학생',role:'student',points:20,email:'b@test.test',authEmail:'b@test.test'});
   const day=dayKey(),end=closesAt(day);
-  await assert.rejects(client.completeLegacy('calc',80));
   let res=await client.action({action:'start',mode:'daily'});assert.equal(res.data.session.stage,0);
   for(let stage=0;stage<5;stage++){
     await root.ref(`academy/sessions/bob/${end}/startedAt`).set(Date.now()-65000);
     res=await client.action({action:'finish',mode:'daily',day,sessionId:res.data.session.id,stage,events:[]});
   }
   assert.ok((await db.ref(`academy/daily/${end}/bob`).get()).exists());
-  assert.equal(await client.completeLegacy('calc',80),10);
-  assert.equal(await client.completeLegacy('calc',80),0);
-  assert.equal(await client.completeLegacy('stroop',70),10);
-  assert.equal(await client.completeLegacy('memory',60,false),0);
   for(const game of GAMES){
     res=await client.action({action:'start',mode:'practice',game:game.id});
     await root.ref('academy/sessions/bob/practice/startedAt').set(Date.now()-65000);
     await client.action({action:'finish',mode:'practice',sessionId:res.data.session.id,stage:0,events:[]});
   }
-  assert.equal(await client.completeLegacy('memory',80),0);
   // 하다 만 연습은 다른 게임을 누르면 새 판으로 바뀐다(예전 연습이 다시 뜨지 않음).
   const first=(await client.action({action:'start',mode:'practice',game:'mole'})).data.session;
   const second=(await client.action({action:'start',mode:'practice',game:'view'})).data.session;
   assert.notEqual(first.id,second.id);assert.deepEqual(second.games,['view']);assert.equal(second.done,false);
-  // 한 판 최소 시간(30초) 전에는 끝낼 수 없다.
+  // 한 판 최소 시간(20초) 전에는 끝낼 수 없다.
   await assert.rejects(db.ref('academy/sessions/bob/practice').set({...second,stage:1,done:true,startedAt:Date.now()}));
   assert.equal((await db.ref('users/bob/points').get()).val(),70);
   await assert.rejects(db.ref('msRecords/2026-10/beginner/bob').set({name:'tester',timeMs:10000}));
@@ -72,5 +66,5 @@ try{
   await teacherDb.ref('users/teach').set({name:'선생님',email:'admin@admin',authEmail:'admin@admin.com',role:'teacher',points:0,todayResult:'-',createdAt:Date.now()});
   assert.ok((await teacherDb.ref('users').get()).child('bob').exists());
   await teacherDb.ref('leaderboardUsers/teach').remove();
-  console.log(`PASS: admin profile bootstrap, 13 games, practice replacement + 30s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
+  console.log(`PASS: admin profile bootstrap, 15 games, practice replacement + 20s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
 }finally{client.stop();await Promise.all([admin,app,teacherApp].map(deleteApp));}

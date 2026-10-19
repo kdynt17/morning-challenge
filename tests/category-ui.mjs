@@ -41,38 +41,27 @@ try{
   assert.equal(await page.locator('#brain-summary .criteria').count(),1);
   assert.equal(await page.locator('[data-rank-tab]').count(),0);
   assert.match(await page.locator('#attendance-title').textContent(),/주말/);
-  // 두뇌교실은 같은 화면 안에서 열리고, 원래 3게임도 일반 연습처럼 보인다
+  // 두뇌교실은 같은 화면 안에서 열리고, 색깔 판단·계산 20도 일반 연습 게임으로 들어 있다(옛 3게임 화면은 없음)
   await page.locator('.big-cta').click();
-  await page.locator('#games-page.active-page [data-classic="calc"]:not(:disabled)').waitFor();
-  assert.equal(await page.locator('[data-classic]').count(),3);
-  assert.equal(await page.getByText('추가 연습').count(),0);
+  await page.locator('#games-page.active-page [data-practice="stroop"]:not(:disabled)').waitFor();
+  assert.equal(await page.locator('[data-practice="calc"]').count(),1);
+  assert.equal(await page.locator('[data-practice]').count(),15);
+  assert.equal(await page.locator('[data-classic],#calc-page,#stroop-page,#memory-page').count(),0);
   assert.equal(page.url().includes('academy/'),false);
-  await page.locator('[data-classic="calc"]').click();
-  await page.locator('#calc-page.active-page').waitFor();
-  // 브라우저 뒤로 가기로 두뇌교실에 돌아온다
-  await page.locator('#tutorial-close').click();
+  // 계산 20: 설명서 → 숫자판·키보드 입력
+  await page.locator('[data-practice="calc"]').click();
+  await page.locator('#brain-guide-start').click();
+  await page.locator('.calc-q').waitFor();
+  const prompt=await page.locator('.calc-q b').textContent();
+  const m=prompt.match(/(\d+)\s*\+\s*(\d+)/);assert.ok(m,prompt);
+  await page.clock.runFor(1000);
+  await page.keyboard.type(String(Number(m[1])+Number(m[2])));
+  await page.clock.runFor(500);
+  await page.waitForFunction(()=>Number(document.querySelector('#brain-score').textContent)>=100);
+  // 브라우저 뒤로 가기는 게임을 닫고 두뇌교실 목록으로
   await page.goBack();
-  await page.locator('#games-page.active-page').waitFor();
-  await page.goForward();
-  await page.locator('#calc-page.active-page').waitFor();
-  await page.locator('#calc-start').click();
-  await page.waitForFunction(()=>document.querySelector('.countdown-overlay')||document.querySelector('#calc-start').hidden);
-  for(let i=0;i<5;i++)await page.clock.runFor(1000);
-  for(let n=0;n<20;n++){
-    const q=await page.locator('#calc-root [data-role="question"]').textContent();
-    const m=q.match(/(\d+)\s*([+−×])\s*(\d+)/);assert.ok(m,q);
-    const a=Number(m[1]),b=Number(m[3]),answer=m[2]==='+'?a+b:m[2]==='−'?a-b:a*b;
-    await page.clock.runFor(1000);await page.keyboard.type(String(answer));
-  }
-  await page.locator('#result-dialog[open]').waitFor();
-  await page.waitForFunction(()=>document.querySelector('#result-detail').textContent.includes('+10P'));
-  await page.locator('#result-again').click();
-  assert.equal(await page.locator('#result-dialog[open]').count(),0);
-  for(const key of ['stroop','memory']){
-    await page.goto(base+'/?game='+key);await page.locator('#tutorial-close').click();
-    await page.locator('#'+key+'-start').click();for(let i=0;i<5;i++)await page.clock.runFor(1000);
-    assert.equal(await page.locator('#'+key+'-page').evaluate(el=>el.classList.contains('active-page')),true);
-  }
+  await page.locator('#games-page.active-page [data-practice="stroop"]').waitFor();
+  assert.equal(await page.locator('.brain-game').count(),0);
   assert.deepEqual(errors,[]);
-  console.log('PASS: home radar, points-only ranking, weekend attendance, in-app academy with 3 classic games, browser back/forward, full calc20 completion +10P, no browser errors.');
+  console.log('PASS: home radar, points-only ranking, weekend attendance, in-app academy with stroop/calc as regular games, calc keyboard input, browser back, no browser errors.');
 }finally{await browser.close();server.close();}
