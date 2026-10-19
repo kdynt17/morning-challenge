@@ -23,7 +23,7 @@ const GUIDES = {
   ladder: ['? 칸에 가로선 하나를 넣어요.', '출발 번호에서 내려가 도착 번호에 닿게 만드세요.', '처음엔 쉽고 갈수록 가로선이 늘어요.'],
   hammer: ['숫자 블록이 탑처럼 쌓여 있어요.', '필요 없는 블록을 눌러 깡! 부수면 위 블록이 내려와요.', '남은 합이 목표와 같으면 "완성!"'],
   balloons: ['풍선이 둥실둥실 떠다녀요.', '작은 수부터 차례로 펑! 터뜨리세요.', '한 자리 → 두 자리 → 음수 → 소수 순서로 어려워져요.'],
-  calc: ['계산 답을 숫자판으로 입력해요(PC는 키보드도 돼요).', '자리 수를 다 채우면 바로 채점해요. ⌫로 지울 수 있어요.', '덧셈 → 뺄셈 → 곱셈 → 두 자리 계산으로 어려워져요.'],
+  calc: ['40초 동안 계산을 최대한 많이 맞혀요. 많이 맞힐수록 높은 점수!', '답을 숫자판으로 입력해요(PC는 키보드도 돼요). ⌫로 지울 수 있어요.', '틀리면 같은 문제를 다시 풀어요. 아래에 다음 문제가 미리 보여요.'],
   pieces: ['목표 모양을 보세요.', '가진 조각과 겹치지 않게 합쳐 목표를 채울 조각을 골라요.', '빨리 맞힐수록 연속 보너스!'],
   rail: ['기차가 출발부터 도착까지 가야 해요.', '? 칸에 들어갈 선로 모양을 골라요.', '앞뒤 선로와 이어지는지 확인하세요.'],
   view: ['블록 탑을 눈(화살표) 쪽에서 본다고 생각하세요.', '앞에서 보면 줄마다 가장 높은 블록만 보여요.', '보이는 높이 모양을 골라요.'],
@@ -90,6 +90,8 @@ export function mountBrain({ app, db, user, root }) {
   let practiceResult = null, bestBefore = 0;
   // 선생님이 게임을 잠근 시각. 그 전에 하다 만 오늘의 도전은 처음부터 다시 한다.
   let lockResetAt = 0;
+  // 마지막으로 누른 시각(풍선 펑·망치 깡 모션을 0.35초만 보여주기 위해)
+  let pickedAt = 0;
   const now = () => Date.now() + offset;
   const storageKey = () => `brain:${user.uid}:${session.id}:${session.stage}`;
   const error = (e) => { errorText = e?.message?.includes('fetch') ? '인터넷 연결을 확인한 뒤 다시 시도해주세요.' : e.message || '연결하지 못했습니다. 다시 시도해주세요.'; };
@@ -377,11 +379,12 @@ export function mountBrain({ app, db, user, root }) {
   function paintQuestion(time) {
     const age = time - questionAt, preview = age < q.preview, game = session.games[session.stage];
     const lit = game === 'sequence' && preview ? Math.floor(age / (q.flash || 650)) : -1;
-    const stamp = `${index}:${preview}:${lit}:${selected.join(',')}`; if (stamp === lastPaint) return; lastPaint = stamp;
+    const fresh = time - pickedAt < 350;
+    const stamp = `${index}:${preview}:${lit}:${selected.join(',')}:${fresh}`; if (stamp === lastPaint) return; lastPaint = stamp;
     const host = root.querySelector('#brain-question');
-    // 계산 20은 다음 문제를 미리 보여준다(맞히면 나올 문제).
+    // 빠른 계산은 다음 문제를 미리 보여준다(맞히면 나올 문제).
     const next = game === 'calc' ? question(game, roundSeed(), index + 1, progress().correct + 1).prompt : '';
-    host.innerHTML = renderQuestion(game, q, { preview, lit, selected, time, next });
+    host.innerHTML = renderQuestion(game, q, { preview, lit, selected, time, next, fresh });
     host.querySelector('#brain-backspace')?.addEventListener('click', () => { selected.pop(); lastPaint = ''; });
     host.querySelectorAll('[data-answer]').forEach((b) => { b.onclick = () => choose(Number(b.dataset.answer)); });
     host.querySelector('#brain-confirm')?.addEventListener('click', () => answer(selected));
@@ -393,7 +396,7 @@ export function mountBrain({ app, db, user, root }) {
     if (q.type === 'choice') { answer([i]); return; }
     // 계산: 같은 숫자를 여러 번 누를 수 있고, 자리 수를 다 채우면 바로 채점한다.
     if (q.type === 'digits') { selected.push(i); lastPaint = ''; if (selected.length === q.answer.length) answer(selected); return; }
-    if (selected.includes(i)) return; selected.push(i); lastPaint = '';
+    if (selected.includes(i)) return; selected.push(i); lastPaint = ''; pickedAt = now();
     if (['memory', 'sequence'].includes(q.type)) {
       if (q.answer[selected.length - 1] !== i || selected.length === q.answer.length) answer(selected);
     }

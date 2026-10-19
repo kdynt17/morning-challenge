@@ -1,6 +1,7 @@
 // 게임마다 한 판 시간이 다르다. 빨리 고르는 직감은 짧게, 기억·관찰이 필요한 게임은 조금 길게.
 export const ROUND_MS = 45000; // 가장 긴 한 판(기록 검사 상한)
-export const MIN_ROUND_MS = 20000; // 가장 짧은 한 판(DB 규칙의 최소 진행 시간)
+// DB 규칙의 최소 진행 시간. 가장 짧은 한 판(20초)보다 넉넉히 작게 둬서, 휴대폰 시계가 조금 빨라도 저장이 거절되지 않게 한다.
+export const MIN_ROUND_MS = 15000;
 const ROUND_TIME = { mole: 30000, focus: 20000, largest: 30000, stroop: 30000, memory: 45000, sequence: 45000, blocks: 40000, balance: 35000, ladder: 30000, hammer: 40000, balloons: 35000, calc: 40000, pieces: 40000, rail: 40000, view: 40000 };
 export function roundMs(game) { return ROUND_TIME[game] ?? ROUND_MS; }
 // 한 판 시간이 달라도 말랑그램은 공평하게: 점수를 40초 한 판 기준으로 바꿔 영역 기록에 넣는다.
@@ -19,7 +20,7 @@ export const GAMES = [
   { id: 'ladder', name: '사다리 연결', category: 2, help: '선을 하나 추가해 출발점에서 목표 도착점으로 연결하세요.' },
   { id: 'hammer', name: '더쎈 망치', category: 3, help: '숫자 블록 탑에서 필요 없는 블록을 깡! 부숴 남은 합을 목표에 맞추세요.' },
   { id: 'balloons', name: '숫자풍선', category: 3, help: '떠다니는 풍선을 작은 수부터 터뜨리세요. 두 자리 수·음수·소수도 나와요.' },
-  { id: 'calc', name: '계산 20', category: 3, help: '계산 답을 숫자판으로 입력하세요. 자리 수를 다 채우면 바로 채점해요.' },
+  { id: 'calc', name: '빠른 계산', category: 3, help: '시간 안에 계산을 최대한 많이 맞히세요. 맞히면 +점수, 틀리면 −점수!' },
   { id: 'pieces', name: '조각퍼즐', category: 4, help: '주어진 조각과 겹치지 않고 합쳐 목표를 채울 조각을 고르세요.' },
   { id: 'rail', name: '선로잇기', category: 4, help: '출발점에서 도착점까지 이어지도록 빈칸의 선로를 고르세요.' },
   { id: 'view', name: '시점추측', category: 4, help: '블록 탑을 화살표(눈) 쪽에서 본 모습을 고르세요.' },
@@ -70,7 +71,7 @@ export function blockHeights(q, removed = []) {
   return Array.from({ length: q.width }, (_, c) => Array.from({ length: q.height }, (_, row) => q.owner[row * q.width + c]).filter((o) => o >= 0 && !removed.includes(o)).length);
 }
 // step = 지금까지 맞힌 개수. 난이도는 맞혀야만 올라가고, 틀리면 같은 단계의 새 문제가 나온다.
-// 계산 20은 틀리면 같은 문제를 다시 풀어야 한다(그래야 '다음 문제' 미리보기도 정확하다).
+// 빠른 계산(calc)은 틀리면 같은 문제를 다시 풀어야 한다(그래야 '다음 문제' 미리보기도 정확하다).
 export function question(game, seed, index, step = index) {
   const r = rng(`${seed}:${game}:${game === 'calc' ? `s${step}` : index}`), int = n => Math.floor(r() * n);
   const shuffle = a => a.map(x => [r(), x]).sort((a,b) => a[0]-b[0]).map(x=>x[1]);
@@ -109,17 +110,20 @@ export function question(game, seed, index, step = index) {
     q.answer = nums.map((_,i)=>i).sort((a,b)=>nums[a]-nums[b]);
   } else if (game === 'memory') {
     // 3×3 → 4×4 → 5×5. 9문제째부터는 1,3,5,7,10처럼 띄엄띄엄한 수가 나온다.
-    const size = level < 2 ? 3 : level < 4 ? 4 : 5, count = Math.min(10, 3 + Math.floor(step / 2));
+    // 처음 쉬운 문제를 줄였다: 3개짜리 1번, 4개짜리 1번 뒤로는 예전 순서 그대로(5개부터).
+    const st = step < 2 ? step * 2 : step + 2, lv = Math.min(5, Math.floor(st / 3));
+    const size = lv < 2 ? 3 : lv < 4 ? 4 : 5, count = Math.min(10, 3 + Math.floor(st / 2));
     const cells = shuffle(range(size * size)).slice(0, count);
-    const numbers = level < 3 ? range(count, 1) : shuffle(range(20, 1)).slice(0, count).sort((a, b) => a - b);
+    const numbers = lv < 3 ? range(count, 1) : shuffle(range(20, 1)).slice(0, count).sort((a, b) => a - b);
     q.type = 'memory'; q.size = size; q.choices = Array(size * size).fill(''); q.answer = cells;
     cells.forEach((pos, i) => { q.choices[pos] = String(numbers[i]); });
     q.preview = 900 + count * 250; q.prompt = '작은 숫자가 있던 칸부터 누르세요';
   } else if (game === 'sequence') {
     // 4칸부터 시작해 길어지고, 불이 켜지는 속도도 점점 빨라진다.
-    const size = level < 3 ? 3 : 4, count = Math.min(9, 4 + Math.floor(step / 3));
+    // 맞힐 때마다 크게 어려워진다: 2문제마다 한 칸씩 길어지고, 불은 한 문제마다 40ms씩 빨라진다(최소 0.15초).
+    const size = step < 4 ? 3 : step < 10 ? 4 : 5, count = Math.min(14, 4 + Math.floor(step / 2));
     q.type = 'memory'; q.size = size; q.choices = Array(size * size).fill(''); q.answer = shuffle(range(size * size)).slice(0, count);
-    q.flash = Math.max(280, 620 - step * 22); q.preview = count * q.flash + 300; q.prompt = '반짝인 순서대로 누르세요';
+    q.flash = Math.max(150, 520 - step * 40); q.preview = count * q.flash + 300; q.prompt = '반짝인 순서대로 누르세요';
   } else if (game === 'blocks') {
     // 테트리스처럼: 조각을 누르면 조각 전체가 사라지고, 위에 있던 블록이 떨어진다.
     const W = 4, H = level < 2 ? 4 : 5, heights = Array.from({ length: W }, () => 2 + int(H - 1));

@@ -1,6 +1,6 @@
 /* 아침 챌린지 전체 디자인 = 두뇌교실(academy/styles.css)과 같은 DS 『말랑말랑 두뇌교실』 스타일.
    두뇌교실 디자인 토큰·공통 부품을 그대로 가져오고, 바깥 앱(출석·상점·순위·추가 게임·관리)의 부품만 같은 모양으로 맞춘다. */
-@import url("academy/styles.css?v=20261019-lock2");
+@import url("academy/styles.css?v=20261019-motion");
 
 :root {
   /* 바깥 앱·개발자 페이지에서 쓰던 이름을 두뇌교실 색으로 연결 */

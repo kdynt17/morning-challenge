@@ -6,6 +6,6 @@ The sibling morning-quest-app shares that Firebase project but has incompatible 
 Never replace this repository or its rules with the sibling's files wholesale.
 Keep the original users/{uid}/points balance, leaderboardUsers, attendance, shop,
 student approvals and the game lock. Minesweeper is retired. All games (15, including the
-rebuilt 색깔 판단 and 계산 20, and 순간기억 merged with the old step memory game) live in
+rebuilt 색깔 판단 and 빠른 계산 (formerly 계산 20), and 순간기억 merged with the old step memory game) live in
 academy/ inside the main app's 두뇌교실 page and store records under the academy database namespace.
 The old records/ path is kept read-only history.

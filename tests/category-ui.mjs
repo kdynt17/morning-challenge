@@ -41,14 +41,14 @@ try{
   assert.equal(await page.locator('#brain-summary .criteria').count(),1);
   assert.equal(await page.locator('[data-rank-tab]').count(),0);
   assert.match(await page.locator('#attendance-title').textContent(),/주말/);
-  // 두뇌교실은 같은 화면 안에서 열리고, 색깔 판단·계산 20도 일반 연습 게임으로 들어 있다(옛 3게임 화면은 없음)
+  // 두뇌교실은 같은 화면 안에서 열리고, 색깔 판단·빠른 계산도 일반 연습 게임으로 들어 있다(옛 3게임 화면은 없음)
   await page.locator('.big-cta').click();
   await page.locator('#games-page.active-page [data-practice="stroop"]:not(:disabled)').waitFor();
   assert.equal(await page.locator('[data-practice="calc"]').count(),1);
   assert.equal(await page.locator('[data-practice]').count(),15);
   assert.equal(await page.locator('[data-classic],#calc-page,#stroop-page,#memory-page').count(),0);
   assert.equal(page.url().includes('academy/'),false);
-  // 계산 20: 설명서 → 숫자판·키보드 입력
+  // 빠른 계산: 설명서 → 숫자판·키보드 입력
   await page.locator('[data-practice="calc"]').click();
   await page.locator('#brain-guide-start').click();
   await page.locator('.calc-q').waitFor();

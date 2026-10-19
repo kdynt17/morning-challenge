@@ -50,7 +50,7 @@ try{
   const first=(await client.action({action:'start',mode:'practice',game:'mole'})).data.session;
   const second=(await client.action({action:'start',mode:'practice',game:'view'})).data.session;
   assert.notEqual(first.id,second.id);assert.deepEqual(second.games,['view']);assert.equal(second.done,false);
-  // 한 판 최소 시간(20초) 전에는 끝낼 수 없다.
+  // 한 판 최소 시간(15초) 전에는 끝낼 수 없다.
   await assert.rejects(db.ref('academy/sessions/bob/practice').set({...second,stage:1,done:true,startedAt:Date.now()}));
   assert.equal((await db.ref('users/bob/points').get()).val(),70);
   await assert.rejects(db.ref('msRecords/2026-10/beginner/bob').set({name:'tester',timeMs:10000}));
@@ -86,5 +86,5 @@ try{
   await teacherDb.ref('users/teach').set({name:'선생님',email:'admin@admin',authEmail:'admin@admin.com',role:'teacher',points:0,todayResult:'-',createdAt:Date.now()});
   assert.ok((await teacherDb.ref('users').get()).child('bob').exists());
   await teacherDb.ref('leaderboardUsers/teach').remove();
-  console.log(`PASS: admin profile bootstrap, lock mid-challenge restarts from the beginning, 15 games, practice replacement + 20s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
+  console.log(`PASS: admin profile bootstrap, lock mid-challenge restarts from the beginning, 15 games, practice replacement + 15s minimum, rank reward 95P for 2nd, original balance preserved, shared shop/teacher balance, 50P practice cap, duplicate settlement blocked, leaderboard synced, weekday attendance (today is ${schoolDay?'a school day':'a weekend'}).`);
 }finally{client.stop();await Promise.all([admin,app,teacherApp].map(deleteApp));}

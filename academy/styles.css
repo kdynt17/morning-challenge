@@ -1312,16 +1312,16 @@ img {
 }
 
 @keyframes drift {
-  0%, 100% { translate: -9px 0; }
-  25% { translate: 0 -12px; }
-  50% { translate: 9px -2px; }
-  75% { translate: 2px -9px; }
+  0%, 100% { transform: translate(-9px, 0); }
+  25% { transform: translate(0, -12px); }
+  50% { transform: translate(9px, -2px); }
+  75% { transform: translate(2px, -9px); }
 }
 
 @keyframes burst {
   0% { transform: scale(1); opacity: 1; }
   60% { transform: scale(1.45); opacity: 0.8; border-style: dashed; }
-  100% { transform: scale(1.7); opacity: 0; }
+  100% { transform: scale(1.7); opacity: 0; visibility: hidden; }
 }
 
 @keyframes float {
@@ -1824,12 +1824,7 @@ img {
   opacity: 1;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation: none !important;
-    transition: none !important;
-  }
-}
+/* '동작 줄이기'를 켠 휴대폰에서도 게임 피드백(팝업·풍선·망치)은 보여야 해서 애니메이션을 끄지 않는다. */
 
 /* 조각퍼즐 위쪽 줄이 폰 폭을 넘지 않도록 작게 */
 .piece-row {
@@ -2027,3 +2022,22 @@ img {
 .score-delta.is-show { animation: delta-up 0.8s ease-out; }
 .score-delta.is-bad.is-show { animation: delta-down 0.8s ease-out; }
 @keyframes delta-down { 0% { opacity: 0; transform: translateY(-6px) scale(0.6); } 25% { opacity: 1; transform: translateY(4px) scale(1.2); } 100% { opacity: 0; transform: translateY(26px) scale(1); } }
+
+/* 저울: 보기가 2·3개일 때도 가운데 정렬 */
+.choices.choices-2 { grid-template-columns: repeat(2, minmax(0, 150px)); justify-content: center; }
+.choices.choices-3 { grid-template-columns: repeat(3, minmax(0, 120px)); justify-content: center; }
+
+/* 빠른 계산: '9 + 2 = ___' 한 줄 */
+.calc-line { display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 10px; }
+.calc-line .calc-answer { min-width: 3.2ch; padding: 0 6px; border: 0; border-bottom: 5px solid var(--ink); border-radius: 0; background: transparent; font-size: 44px; text-align: center; }
+.calc-line .calc-answer.is-empty { color: transparent; }
+
+/* 더쎈 망치: 부순 블록이 두 조각으로 쪼개지며 날아가고, 그 높이에서 망치가 내려친다 */
+.tower-block.is-breaking { position: relative; overflow: visible; display: flex; padding: 0; border-color: transparent; background: transparent; animation: block-collapse 0.5s ease-in 0.12s forwards; }
+.tower-block.is-breaking .shard { flex: 1; display: grid; place-items: center; border: 3px solid var(--ink); background: var(--c); font-style: normal; }
+.tower-block.is-breaking .shard.l { border-radius: 6px 0 0 6px; clip-path: polygon(0 0, 100% 0, 78% 45%, 100% 100%, 0 100%); animation: shard-l 0.5s ease-in 0.1s forwards; }
+.tower-block.is-breaking .shard.r { border-radius: 0 6px 6px 0; margin-left: -12px; clip-path: polygon(12% 0, 100% 0, 100% 100%, 12% 100%, 0 45%); animation: shard-r 0.5s ease-in 0.1s forwards; }
+.tower-block .hammer-hit { position: absolute; top: -20px; right: -66px; display: grid; justify-items: center; pointer-events: none; }
+@keyframes block-collapse { to { height: 0; margin-top: 0; } }
+@keyframes shard-l { to { transform: translate(-60px, 26px) rotate(-35deg); opacity: 0; } }
+@keyframes shard-r { to { transform: translate(60px, 30px) rotate(40deg); opacity: 0; } }

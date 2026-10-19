@@ -136,7 +136,7 @@ const drift = (time, i, period) => `-${(((time || 0) / 1000) + i * 0.83) % perio
  * @param {{preview:boolean, lit:number, selected:number[]}} view
  */
 export function renderQuestion(game, q, view) {
-  const { preview, lit, selected, time = 0, next = '' } = view;
+  const { preview, lit, selected, time = 0, next = '', fresh = true } = view;
   const picked = (i) => selected.includes(i);
   const disabled = (i) => (preview || picked(i) ? 'disabled' : '');
   let stage = '';
@@ -171,7 +171,7 @@ export function renderQuestion(game, q, view) {
       prompt = '답을 입력하세요';
       // 몇 자리인지 알려주지 않는다. 다음 문제는 아래에 흐리게 미리 보여준다.
       const typed = selected.map((i) => q.choices[i]).join('');
-      stage = `<div class="calc-q"><b>${esc(q.prompt)}</b><span class="calc-answer ${typed ? '' : 'is-empty'}">${esc(typed || '?')}</span>${next ? `<span class="calc-next">다음 · ${esc(next)}</span>` : ''}</div>`;
+      stage = `<div class="calc-q"><div class="calc-line"><b>${esc(q.prompt)}</b><span class="calc-answer ${typed ? '' : 'is-empty'}">${esc(typed || '0')}</span></div>${next ? `<span class="calc-next">다음 · ${esc(next)}</span>` : ''}</div>`;
       layout = 'grid-3 numpad-grid';
       choices = q.choices.map((c, i) => `<button class="tile tile-num ${c === '0' ? 'is-zero' : ''}" data-answer="${i}" ${preview ? 'disabled' : ''}>${c}</button>`).join('')
         + '<button id="brain-backspace" class="tile tile-num is-back" type="button" aria-label="지우기">⌫</button>';
@@ -187,7 +187,8 @@ export function renderQuestion(game, q, view) {
       prompt = '작은 수부터 차례로 펑!';
       layout = 'balloon-field';
       choices = q.choices.map((c, i) => {
-        const state = picked(i) ? (selected.at(-1) === i ? 'is-popping' : 'is-gone') : '';
+        // 방금 누른 풍선만 펑 터지는 모션, 0.35초가 지나면 완전히 사라진다(fresh=false).
+        const state = picked(i) ? (selected.at(-1) === i && fresh ? 'is-popping' : 'is-gone') : '';
         return `<button class="balloon ${state}" data-answer="${i}" style="--c:${BALLOON_COLORS[i % BALLOON_COLORS.length]};--d:${drift(time, i, 4.2)}" ${disabled(i)}><span>${esc(c)}</span></button>`;
       }).join('');
       break;
@@ -224,7 +225,7 @@ export function renderQuestion(game, q, view) {
       prompt = q.ask === 'light' ? '가장 <b>가벼운</b> 것은?' : '가장 <b>무거운</b> 것은?';
       const relations = q.relations ?? q.prompt.split(/\s{2,}/).filter(Boolean).map((x) => { const [light, heavy] = x.split('<').map((t) => t.trim()); return { light, heavy }; });
       stage = `<div class="seesaw-row">${relations.map(seesaw).join('')}</div><p class="stage-note">내려간 쪽이 더 무거워요</p>`;
-      layout = 'grid-4';
+      layout = q.choices.length < 4 ? `choices-${q.choices.length}` : 'grid-4';
       choices = q.choices.map((c, i) => `<button class="tile tile-shape" data-answer="${i}" aria-label="${SHAPE_NAME[c]}" ${disabled(i)}>${shape(c, 48)}</button>`).join('');
       break;
     }
@@ -241,9 +242,14 @@ export function renderQuestion(game, q, view) {
       stage = `<div class="sum-meter"><span>남은 합</span><b class="${left === q.targetSum ? 'is-match' : ''}">${left}</b><span>목표 ${q.targetSum}</span></div>`;
       // 숫자 블록을 쌓은 탑. 부순 블록은 빠지고 위 블록이 내려앉는다.
       layout = 'hammer-tower';
-      // 방금 부순 블록 자리에 망치가 '깡!' 내려친다.
-      if (selected.length) stage += `<span class="hammer-hit" aria-hidden="true"><i>🔨</i><b>깡!</b></span>`;
-      choices = q.numbers.map((n, i) => (picked(i) ? '' : `<button class="tower-block" data-answer="${i}" style="--c:${PIECE_COLORS[i % PIECE_COLORS.length]}" aria-label="${n} 블록 부수기" ${disabled(i)}>${n}</button>`)).join('');
+      // 방금 부순 블록은 그 높이에서 망치가 '깡!' 내려치고 두 조각으로 쪼개지며 사라진다.
+      choices = q.numbers.map((n, i) => {
+        const c = PIECE_COLORS[i % PIECE_COLORS.length];
+        if (picked(i)) return selected.at(-1) === i && fresh
+          ? `<div class="tower-block is-breaking" style="--c:${c}" aria-hidden="true"><i class="shard l">${n}</i><i class="shard r"></i><span class="hammer-hit"><i>🔨</i><b>깡!</b></span></div>`
+          : '';
+        return `<button class="tower-block" data-answer="${i}" style="--c:${c}" aria-label="${n} 블록 부수기" ${disabled(i)}>${n}</button>`;
+      }).join('');
       break;
     }
     case 'pieces': {
