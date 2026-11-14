@@ -1,6 +1,6 @@
 /* 아침 챌린지 전체 디자인 = 두뇌교실(academy/styles.css)과 같은 DS 『말랑말랑 두뇌교실』 스타일.
    두뇌교실 디자인 토큰·공통 부품을 그대로 가져오고, 바깥 앱(출석·상점·순위·추가 게임·관리)의 부품만 같은 모양으로 맞춘다. */
-@import url("academy/styles.css?v=20261114-quiz");
+@import url("academy/styles.css?v=20261115-google");
 
 :root {
   /* 바깥 앱·개발자 페이지에서 쓰던 이름을 두뇌교실 색으로 연결 */
@@ -1461,3 +1461,9 @@ a.points-pill {
 .stack-form .q-type-tabs input { width: auto; min-height: 0; margin: 0; padding: 0; }
 .stack-form .q-type-tabs label { display: flex; font-size: 16px; }
 .admin-rank { padding-left: 0; list-style: none; }
+.google-login-button { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
+.google-login-button svg { flex: none; padding: 3px; border-radius: 50%; background: #fff; }
+.auth-card #login-form { margin-top: 4px; }
+.auth-card #login-form[hidden] { display: none; }
+.google-link-card { border-color: var(--blue); background: #eef6ff; }
+.google-link-card h2 { margin: 4px 0; font-family: var(--display); font-size: 21px; }

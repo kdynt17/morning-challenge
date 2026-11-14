@@ -7,9 +7,9 @@
     <title>가입자 관리</title>
     <meta http-equiv="Cache-Control" content="no-store" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
-    <link rel="stylesheet" href="../styles.css?v=20261114-quiz" />
-    <link rel="stylesheet" href="developer.css?v=20261114-quiz" />
-    <script type="module" src="developer.js?v=20261114-quiz"></script>
+    <link rel="stylesheet" href="../styles.css?v=20261115-google" />
+    <link rel="stylesheet" href="developer.css?v=20261115-google" />
+    <script type="module" src="developer.js?v=20261115-google"></script>
   </head>
   <body>
     <main>
@@ -49,13 +49,20 @@
         </section>
 
         <article class="admin-card">
+          <h3>구글 로그인 연결</h3>
+          <p class="helper-text">학생이 학교 구글 계정으로 처음 로그인하면 여기에 나와요. 예전 계정을 확인하고 <b>기존 기록과 연결</b>을 누르면 포인트·출석·구매 기록이 그대로 이어져요. 처음 누를 때 Firebase 프로젝트 주인 구글 계정으로 한 번 허락해요.</p>
+          <button id="link-all-button" class="primary-button" type="button" hidden>이메일이 같은 학생 한 번에 연결</button>
+          <div id="link-list" class="dev-list"><p class="empty-text">불러오고 있어요.</p></div>
+        </article>
+
+        <article class="admin-card">
           <h3>승인 대기</h3>
           <div id="pending-list" class="dev-list"><p class="empty-text">불러오고 있어요.</p></div>
         </article>
 
         <article class="admin-card">
           <h3>전체 가입자</h3>
-          <p class="helper-text">학생이 비밀번호를 잊으면 그 학생 줄의 <b>비밀번호 재설정</b>을 눌러 새 비밀번호를 정해 주세요. 지금 비밀번호는 누구도 볼 수 없어요. 처음 누를 때 Firebase 프로젝트를 만든 구글 계정으로 한 번 로그인하는 창이 떠요(약 1시간 동안 다시 안 물어봐요).</p>
+          <p class="helper-text">구글 연결 전인 학생이 비밀번호를 잊으면 <b>비밀번호 재설정</b>으로 새 비밀번호를 정해 줄 수 있어요(구글로 바꾸는 게 더 좋아요).</p>
           <div class="dev-filters">
             <input id="dev-search" type="search" placeholder="이름 또는 이메일 검색" />
             <select id="dev-status-filter" aria-label="상태 필터">

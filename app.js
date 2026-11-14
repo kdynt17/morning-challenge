@@ -1,17 +1,18 @@
-import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, DEFAULT_TRIES, CHOICE_MARKS, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261114-quiz";
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, DEFAULT_TRIES, CHOICE_MARKS, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-google";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
-  browserSessionPersistence,
-  createUserWithEmailAndPassword,
+  browserPopupRedirectResolver,
+  GoogleAuthProvider,
   indexedDBLocalPersistence,
   initializeAuth,
+  linkWithPopup,
   onAuthStateChanged,
-  setPersistence,
-  sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
   signOut,
-  updateProfile,
+  unlink,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   get,
@@ -41,9 +42,8 @@ const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 const ATTENDANCE_POINTS = 10;
 const STREAK_BONUS_EVERY = 7;
 const STREAK_BONUS_POINTS = 30;
-const LAST_EMAIL_KEY = "mc.lastEmail";
 const LAST_NAME_KEY = "mc.lastName";
-// 학번만 적으면 학교 메일 주소로 바꿔서 로그인한다.
+// 학생은 이 학교 구글 계정으로만 로그인한다(DB 규칙도 새 가입을 이 주소로만 받는다).
 const SCHOOL_EMAIL_DOMAIN = "junghwa.sen.ms.kr";
 const DAY_MS = 86400000;
 const KST_OFFSET_MS = 9 * 3600000;
@@ -56,14 +56,8 @@ const pendingScreen = $("#pending-screen");
 const pendingTitle = $("#pending-title");
 const pendingMessage = $("#pending-message");
 const appShell = $("#app-shell");
-const showLoginButton = $("#show-login-button");
-const showSignupButton = $("#show-signup-button");
-const loginPanel = $("#login-panel");
-const signupPanel = $("#signup-panel");
 const loginForm = $("#login-form");
-const signupForm = $("#signup-form");
 const authMessage = $("#auth-message");
-const signupMessage = $("#signup-message");
 const pageTitle = $("#page-title");
 const todayLabel = $("#today-label");
 const leaderboardList = $("#leaderboard-list");
@@ -132,7 +126,8 @@ if (setupRequired) {
 } else {
   const app = initializeApp(firebaseConfig);
   // 로그인 정보를 IndexedDB(안 되면 localStorage)에 저장해, 다음에 열면 바로 들어가지게 한다.
-  auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] });
+  auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence], popupRedirectResolver: browserPopupRedirectResolver });
+  auth.languageCode = "ko";
   db = getDatabase(app);
   showSplash();
 
@@ -140,14 +135,14 @@ if (setupRequired) {
     serverOffsetMs = Number(snapshot.val() ?? 0);
   });
 
-  showLoginButton.addEventListener("click", () => setAuthMode("login"));
-  showSignupButton.addEventListener("click", () => setAuthMode("signup"));
   loginForm.addEventListener("submit", handleLogin);
-  $("#forgot-password-button").addEventListener("click", () => {
-    const box = $("#forgot-password-box");
-    box.hidden = !box.hidden;
+  $("#google-login-button").addEventListener("click", handleGoogleLogin);
+  $("#pending-relogin-button").addEventListener("click", handleGoogleLogin);
+  $("#google-link-button").addEventListener("click", handleGoogleLink);
+  $("#teacher-login-toggle").addEventListener("click", () => {
+    loginForm.hidden = !loginForm.hidden;
+    if (!loginForm.hidden) $("#login-email").focus();
   });
-  $("#send-reset-mail-button").addEventListener("click", handlePasswordReset);
   $("#question-form").addEventListener("submit", handleQuestionSave);
   $("#question-form").addEventListener("change", (event) => {
     if (event.target.name === "q-type") renderQuestionTypeFields();
@@ -160,7 +155,6 @@ if (setupRequired) {
   });
   $("#admin-question-list").addEventListener("click", handleAdminQuestionClick);
   renderChoiceRows();
-  signupForm.addEventListener("submit", handleSignup);
   $("#logout-button").addEventListener("click", () => signOut(auth));
   $("#pending-logout-button").addEventListener("click", () => signOut(auth));
   productForm.addEventListener("submit", handleProductSave);
@@ -180,7 +174,6 @@ if (setupRequired) {
     showPage(pageNames[page] ? page : "home", { push: false });
   });
 
-  setAuthMode("login");
 
   // 자정이나 월이 바뀐 채로 화면을 켜 두면 날짜 기준 구독을 새로 연다.
   setInterval(() => {
@@ -203,6 +196,16 @@ if (setupRequired) {
       return;
     }
 
+    // 학교 계정이 아닌 구글 계정이면 막는다. 방금 새로 생긴 계정이면 지워서 흔적을 남기지 않는다.
+    const googleEmail = googleEmailOf(user);
+    if (googleEmail && !isSchoolEmail(googleEmail)) {
+      const onlyGoogle = user.providerData.every((info) => info.providerId === "google.com");
+      await (onlyGoogle ? user.delete() : Promise.reject()).catch(() => signOut(auth));
+      showSignedOut();
+      setMessage(authMessage, `${googleEmail} 은(는) 학교 계정이 아니에요. 학번@${SCHOOL_EMAIL_DOMAIN} 구글 계정으로 로그인해 주세요.`);
+      return;
+    }
+
     try {
       currentProfile = await ensureProfile(user);
     } catch (error) {
@@ -214,6 +217,10 @@ if (setupRequired) {
         : "계정 정보를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 로그인해 주세요.");
       void signOut(auth);
       return;
+    }
+    // 구글로 들어왔는데 기록에 아직 없으면 적어 둔다(예전 계정에 자동으로 합쳐진 경우).
+    if (googleEmail && currentProfile && !currentProfile.googleEmail && !isTeacher(currentProfile, user)) {
+      void update(ref(db, `users/${user.uid}`), { googleEmail, loginProvider: "google", googleLinkedAt: serverTimestamp() }).catch(() => {});
     }
     if (!isApproved(currentProfile, user)) {
       waitForApproval();
@@ -266,77 +273,98 @@ function showPendingApproval(profile) {
   pendingScreen.hidden = false;
 
   const rejected = profile?.status === "rejected";
+  const linked = profile?.status === "linked";
+  $("#pending-relogin-button").hidden = !linked;
+  if (linked) {
+    // 선생님이 이 구글 계정을 예전 계정(기록)에 붙였다. 다시 로그인하면 예전 계정으로 들어간다.
+    pendingTitle.textContent = "예전 기록과 연결됐어요!";
+    pendingMessage.textContent = "아래 '다시 구글로 로그인'을 누르면 포인트·출석 기록이 있는 원래 계정으로 들어가요.";
+    return;
+  }
   pendingTitle.textContent = rejected ? "가입이 승인되지 않았습니다" : "선생님 승인을 기다리고 있어요";
   pendingMessage.textContent = rejected
     ? "선생님에게 확인해 주세요."
-    : `${profile?.name ?? "학생"} 님의 가입 신청이 접수되었습니다. 선생님이 승인하면 이 화면이 자동으로 넘어갑니다.`;
+    : `${profile?.name ?? "학생"} 님(${profile?.authEmail ?? ""})의 로그인이 접수됐어요. 선생님이 예전 기록과 연결(또는 승인)하면 이 화면이 자동으로 넘어가요.`;
 }
 
-// ── 로그인 / 가입 ───────────────────────────────────────────
+// ── 로그인 (학생: 학교 구글 계정, 선생님: 아이디·비밀번호) ───────────
+
+function schoolGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+  // hd: 구글 창에서 학교 계정만 고르도록 안내(진짜 검사는 로그인 뒤 + DB 규칙)
+  provider.setCustomParameters({ hd: SCHOOL_EMAIL_DOMAIN, prompt: "select_account" });
+  return provider;
+}
+
+function googleEmailOf(user) {
+  return user?.providerData?.find((info) => info.providerId === "google.com")?.email ?? null;
+}
+
+function isSchoolEmail(email) {
+  return typeof email === "string" && email.toLowerCase().endsWith(`@${SCHOOL_EMAIL_DOMAIN}`);
+}
+
+async function handleGoogleLogin() {
+  setMessage(authMessage, "구글 로그인 창을 여는 중이에요.");
+  try {
+    await signInWithPopup(auth, schoolGoogleProvider());
+  } catch (error) {
+    if (error.code === "auth/popup-blocked" || error.code === "auth/operation-not-supported-in-this-environment") {
+      await signInWithRedirect(auth, schoolGoogleProvider()).catch((redirectError) => setMessage(authMessage, authErrorMessage(redirectError.code)));
+      return;
+    }
+    setMessage(authMessage, authErrorMessage(error.code));
+  }
+}
 
 async function handleLogin(event) {
   event.preventDefault();
   setMessage(authMessage, "로그인하는 중입니다.");
-  const rawLogin = $("#login-email").value.trim();
-  const password = $("#login-password").value;
-  const email = normalizeLoginEmail(rawLogin);
-  const remember = $("#remember-me").checked;
-
   try {
-    await setPersistence(auth, remember ? indexedDBLocalPersistence : browserSessionPersistence);
-    await signInWithEmailAndPassword(auth, email, password);
-    storeLocal(LAST_EMAIL_KEY, remember ? rawLogin : null);
+    await signInWithEmailAndPassword(auth, normalizeLoginEmail($("#login-email").value), $("#login-password").value);
   } catch (error) {
     setMessage(authMessage, authErrorMessage(error.code));
   }
 }
 
-async function handlePasswordReset() {
-  const email = normalizeLoginEmail($("#login-email").value);
-  if (!email) {
-    setMessage(authMessage, "위 칸에 학번이나 가입한 이메일을 먼저 입력하세요.");
-    $("#login-email").focus();
-    return;
-  }
-  if (normalizeLoginEmail(email) === ADMIN_AUTH_EMAIL) {
-    setMessage(authMessage, "관리자 계정은 Firebase 콘솔에서 비밀번호를 바꿔주세요.");
-    return;
-  }
-
+// 예전(비밀번호) 계정으로 들어와 있는 학생이 스스로 학교 구글 계정을 붙인다. 계정이 그대로라 기록도 그대로다.
+async function handleGoogleLink() {
+  const button = $("#google-link-button");
+  button.disabled = true;
   try {
-    setMessage(authMessage, "재설정 메일을 보내는 중입니다.");
-    auth.languageCode = "ko";
-    await sendPasswordResetEmail(auth, email);
-    setMessage(authMessage, `${email}로 재설정 메일을 보냈어요. 메일함(스팸함 포함)에서 링크를 눌러 새 비밀번호를 정하세요. 메일이 안 오면 선생님께 말해 주세요.`);
+    const result = await linkWithPopup(currentUser, schoolGoogleProvider());
+    const googleEmail = googleEmailOf(result.user);
+    if (!isSchoolEmail(googleEmail)) {
+      await unlink(currentUser, "google.com").catch(() => {});
+      showToast(`${googleEmail ?? "이 계정"} 은(는) 학교 계정이 아니에요. 학번@${SCHOOL_EMAIL_DOMAIN} 계정을 골라 주세요.`);
+      return;
+    }
+    // 이제 구글로만 들어오므로 예전 비밀번호는 지운다.
+    if (currentUser.providerData.some((info) => info.providerId === "password")) {
+      await unlink(currentUser, "password").catch(() => {});
+    }
+    await update(ref(db, `users/${currentUser.uid}`), { googleEmail, loginProvider: "google", googleLinkedAt: serverTimestamp() }).catch(() => {});
+    showToast("학교 구글 계정을 연결했어요! 다음부터 구글로 로그인해요.");
+    renderGoogleLink();
   } catch (error) {
-    setMessage(authMessage, authErrorMessage(error.code));
+    if (error.code === "auth/credential-already-in-use") {
+      showToast("그 구글 계정으로 따로 로그인한 적이 있어요. 선생님께 '예전 기록 연결'을 부탁해 주세요.");
+    } else if (error.code === "auth/provider-already-linked") {
+      renderGoogleLink();
+    } else {
+      showToast(authErrorMessage(error.code));
+    }
+  } finally {
+    button.disabled = false;
   }
 }
 
-async function handleSignup(event) {
-  event.preventDefault();
-  const name = $("#signup-name").value.trim();
-  const email = $("#signup-email").value.trim();
-  const password = $("#signup-password").value;
-
-  try {
-    setMessage(signupMessage, "가입하는 중입니다.");
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(credential.user, { displayName: name });
-    await set(ref(db, `users/${credential.user.uid}`), {
-      name,
-      email,
-      authEmail: credential.user.email,
-      role: "student",
-      status: "pending",
-      points: 0,
-      todayResult: "-",
-      createdAt: serverTimestamp(),
-    });
-    setMessage(signupMessage, "가입 신청이 완료되었습니다. 선생님 승인을 기다려 주세요.");
-  } catch (error) {
-    setMessage(signupMessage, authErrorMessage(error.code));
-  }
+function renderGoogleLink() {
+  if (!currentUser) return;
+  const teacher = isTeacher(currentProfile, currentUser);
+  const googleEmail = googleEmailOf(currentUser);
+  $("#google-link-card").hidden = teacher || Boolean(googleEmail);
+  $("#profile-login").textContent = teacher ? "선생님 아이디" : googleEmail ? `학교 구글 (${googleEmail})` : "예전 비밀번호 (구글 연결 필요)";
 }
 
 async function ensureProfile(user) {
@@ -366,12 +394,14 @@ async function ensureProfile(user) {
     return profile;
   }
 
+  const googleEmail = googleEmailOf(user);
   const profile = {
     name: isAdmin ? "선생님" : user.displayName || "학생",
     email: isAdmin ? ADMIN_LOGIN : user.email,
     authEmail: user.email,
     role: isAdmin ? "teacher" : "student",
     ...(isAdmin ? {} : { status: "pending" }),
+    ...(googleEmail ? { loginProvider: "google", googleEmail } : {}),
     points: 0,
     todayResult: "-",
     createdAt: serverTimestamp(),
@@ -409,6 +439,7 @@ function renderProfile(user, profile) {
   $("#greeting").textContent = `${name} 님, ${greetingByHour()}`;
   profileMessage.textContent = teacher ? "선생님 계정은 포인트와 문제 풀이 기록이 저장되지 않아요." : "";
   adminNavButton.hidden = !teacher;
+  renderGoogleLink();
   document.body.classList.toggle("is-teacher", teacher);
   renderAttendance();
 }
@@ -440,17 +471,6 @@ async function syncLeaderboardProfile(uid, profile) {
   });
 }
 
-function setAuthMode(mode) {
-  const isSignup = mode === "signup";
-  loginPanel.classList.toggle("active-auth-panel", !isSignup);
-  signupPanel.classList.toggle("active-auth-panel", isSignup);
-  showLoginButton.classList.toggle("active", !isSignup);
-  showSignupButton.classList.toggle("active", isSignup);
-  showLoginButton.setAttribute("aria-selected", String(!isSignup));
-  showSignupButton.setAttribute("aria-selected", String(isSignup));
-  setMessage(authMessage, isSignup ? "이름, 이메일, 비밀번호를 입력하세요." : "학번(또는 이메일)과 비밀번호로 로그인하세요.");
-}
-
 function showSplash() {
   const lastName = readLocal(LAST_NAME_KEY);
   $("#splash-text").textContent = lastName ? `${lastName} 님, 들어가는 중…` : "들어가는 중…";
@@ -477,12 +497,6 @@ function showSignedOut() {
   authScreen.hidden = false;
   pendingScreen.hidden = true;
   appShell.hidden = true;
-  setAuthMode("login");
-  const lastEmail = readLocal(LAST_EMAIL_KEY);
-  if (lastEmail && !$("#login-email").value) {
-    $("#login-email").value = lastEmail;
-    $("#login-password").focus({ preventScroll: true });
-  }
 }
 
 function showPage(page, { push = true } = {}) {
@@ -1834,7 +1848,6 @@ function normalizeLoginEmail(value) {
   const login = String(value ?? "").trim();
   const lower = login.toLowerCase();
   if (lower === ADMIN_LOGIN || lower === "admin" || lower === ADMIN_AUTH_EMAIL) return ADMIN_AUTH_EMAIL;
-  if (/^\d{5,12}$/.test(login)) return `${login}@${SCHOOL_EMAIL_DOMAIN}`;
   return login;
 }
 
@@ -1892,6 +1905,10 @@ function authErrorMessage(code) {
   if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") return "아이디 또는 비밀번호를 확인해주세요.";
   if (code === "auth/user-disabled") return "사용이 중지된 계정입니다. Firebase 콘솔에서 확인해주세요.";
   if (code === "auth/network-request-failed") return "인터넷 연결을 확인해주세요.";
+  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return "구글 로그인 창이 닫혔어요. 다시 눌러 주세요.";
+  if (code === "auth/operation-not-allowed") return "아직 구글 로그인이 켜져 있지 않아요. 선생님께 말해 주세요.";
+  if (code === "auth/account-exists-with-different-credential") return "예전 계정이 아직 구글과 연결되지 않았어요. 선생님께 '구글 로그인 열기'를 부탁한 뒤 다시 눌러 주세요.";
+  if (code === "auth/requires-recent-login") return "다시 로그인한 뒤에 해 주세요.";
   if (code === "auth/unauthorized-domain") return "Firebase Authentication 승인 도메인에 kdynt17.github.io를 추가해주세요.";
   if (code === "auth/weak-password") return "비밀번호는 6자 이상이어야 합니다.";
   if (code === "auth/missing-email") return "가입한 이메일을 입력해주세요.";

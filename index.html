@@ -15,8 +15,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
-    <link rel="stylesheet" href="styles.css?v=20261114-quiz" />
-    <script type="module" src="app.js?v=20261114-quiz"></script>
+    <link rel="stylesheet" href="styles.css?v=20261115-google" />
+    <script type="module" src="app.js?v=20261115-google"></script>
   </head>
   <body>
     <main>
@@ -38,35 +38,20 @@
             <p class="bubble">출석 찍고, 오늘의 문제 먼저 맞히고,<br />포인트 모아서 상점에서 쓰자!</p>
           </div>
         </div>
-        <section class="auth-card" aria-label="로그인과 회원가입">
-          <div class="auth-mode-tabs" role="tablist" aria-label="로그인 또는 회원가입">
-            <button id="show-login-button" class="active" type="button" role="tab" aria-controls="login-panel" aria-selected="true">로그인</button>
-            <button id="show-signup-button" type="button" role="tab" aria-controls="signup-panel" aria-selected="false">회원가입</button>
-          </div>
-          <section id="login-panel" class="auth-panel active-auth-panel" aria-label="로그인">
-            <form id="login-form" class="stack-form">
-              <label>학번 또는 이메일<input id="login-email" name="email" type="text" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="학번(202620501) 또는 이메일" autocomplete="username" required /></label>
-              <label>비밀번호<input id="login-password" name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required /></label>
-              <label class="checkbox-label"><input id="remember-me" type="checkbox" checked /> 로그인 상태 유지 (공용 컴퓨터면 끄세요)</label>
-              <button class="primary-button" type="submit">들어가기</button>
-            </form>
-            <button id="forgot-password-button" class="text-button" type="button">비밀번호를 잊었어요</button>
-            <div id="forgot-password-box" class="forgot-box" hidden>
-              <p><b>선생님께 말해 주세요.</b> 선생님이 관리 페이지에서 새 비밀번호로 바꿔 줄 수 있어요. 바뀐 비밀번호로 로그인한 뒤 계속 쓰면 돼요.</p>
-              <p class="helper-text no-margin">학교 메일을 볼 수 있다면 위 칸에 학번이나 이메일을 적고 아래 버튼을 눌러 재설정 메일을 받을 수도 있어요.</p>
-              <button id="send-reset-mail-button" class="secondary-button" type="button">재설정 메일 받기</button>
-            </div>
-          </section>
-          <section id="signup-panel" class="auth-panel" aria-label="회원가입">
-            <form id="signup-form" class="stack-form">
-              <label>이름<input id="signup-name" type="text" placeholder="홍길동" autocomplete="name" required /></label>
-              <label>이메일<input id="signup-email" type="email" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="email" required /></label>
-              <label>비밀번호<input id="signup-password" type="password" placeholder="6자 이상" autocomplete="new-password" minlength="6" required /></label>
-              <button class="primary-button" type="submit">가입 신청하기</button>
-            </form>
-            <p id="signup-message" class="helper-text">가입 후 선생님이 승인하면 이용할 수 있습니다.</p>
-          </section>
-          <p id="auth-message" class="helper-text">학번(또는 이메일)과 비밀번호로 로그인하세요.</p>
+        <section class="auth-card" aria-label="로그인">
+          <button id="google-login-button" class="primary-button google-login-button" type="button">
+            <svg viewBox="0 0 48 48" width="26" height="26" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.5 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.2l7.8 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.8c4.3-4 6.9-9.9 6.9-17.2z"/><path fill="#FBBC05" d="M10.5 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.8c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.2-13.5-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+            학교 구글 계정으로 로그인
+          </button>
+          <p class="helper-text no-margin center-text"><b>학번@junghwa.sen.ms.kr</b> 학교 계정만 들어올 수 있어요.<br />처음이면 선생님이 승인(예전 기록 연결)한 뒤 이용할 수 있어요.</p>
+          <p class="helper-text no-margin center-text">카카오톡 안에서 열면 구글 로그인이 안 돼요. 크롬이나 사파리로 열어 주세요.</p>
+          <p id="auth-message" class="helper-text center-text" role="status"></p>
+          <button id="teacher-login-toggle" class="text-button" type="button">선생님 로그인</button>
+          <form id="login-form" class="stack-form" hidden>
+            <label>선생님 아이디<input id="login-email" name="email" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" required /></label>
+            <label>비밀번호<input id="login-password" name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="secondary-button" type="submit">선생님으로 들어가기</button>
+          </form>
         </section>
       </section>
 
@@ -80,6 +65,7 @@
           <img class="sticker" src="academy/assets/mascot-think.webp" alt="" width="110" height="110" />
           <h2 id="pending-title">선생님 승인을 기다리고 있어요</h2>
           <p id="pending-message" class="helper-text"></p>
+          <button id="pending-relogin-button" class="primary-button" type="button" hidden>다시 구글로 로그인</button>
           <button id="pending-logout-button" class="secondary-button" type="button">로그아웃</button>
         </section>
       </section>
@@ -99,6 +85,13 @@
         <!-- 홈 -->
         <section id="home-page" class="page active-page" data-page="home">
           <p id="greeting" class="greeting">좋은 아침!</p>
+
+          <article id="google-link-card" class="card google-link-card" hidden>
+            <p class="card-label">로그인 방식이 바뀌어요</p>
+            <h2>학교 구글 계정을 연결해 주세요</h2>
+            <p class="meter-caption">한 번만 연결하면 다음부터 비밀번호 없이 <b>학교 구글 계정</b>으로 들어와요. 포인트·출석·구매 기록은 그대로예요.</p>
+            <button id="google-link-button" class="primary-button" type="button">학교 구글 계정 연결하기</button>
+          </article>
 
           <article class="card quiz-home-card">
             <p class="card-label">오늘의 문제</p>
@@ -159,6 +152,7 @@
             <dl>
               <div><dt>이름</dt><dd id="profile-name">-</dd></div>
               <div><dt>아이디</dt><dd id="profile-email">-</dd></div>
+              <div><dt>로그인</dt><dd id="profile-login">-</dd></div>
               <div><dt>역할</dt><dd id="profile-role">-</dd></div>
               <div><dt>포인트</dt><dd><span id="profile-points">0</span>P</dd></div>
             </dl>

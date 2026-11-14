@@ -41,7 +41,8 @@ const searchInput = $("#dev-search");
 const statusFilter = $("#dev-status-filter");
 const devMessage = $("#dev-message");
 
-const statusLabels = { pending: "승인 대기", approved: "승인", rejected: "거절" };
+const statusLabels = { pending: "승인 대기", approved: "승인", rejected: "거절", linked: "예전 계정에 연결됨" };
+const SCHOOL_EMAIL_DOMAIN = "junghwa.sen.ms.kr";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -58,6 +59,7 @@ $("#dev-logout-button").addEventListener("click", () => signOut(auth));
 searchInput.addEventListener("input", renderUsers);
 statusFilter.addEventListener("change", renderUsers);
 document.addEventListener("click", handleActionClick);
+$("#link-all-button").addEventListener("click", handleLinkAll);
 
 onAuthStateChanged(auth, async (user) => {
   unsubscribeUsers?.();
@@ -119,8 +121,75 @@ function subscribeUsers() {
   );
 }
 
+// 구글로 새로 로그인해 기다리는 학생(예전 계정에 붙여 줄 대상)
+function isGoogleRequest(user) {
+  return user.role !== "teacher" && user.loginProvider === "google" && getStatus(user) === "pending";
+}
+
+// 연결해 줄 수 있는 예전 계정들
+function linkCandidates(request) {
+  return users.filter((user) => user.role !== "teacher" && user.id !== request.id && getStatus(user) !== "linked" && !isGoogleRequest(user));
+}
+
+function studentNumber(email) {
+  return String(email ?? "").split("@")[0].match(/\d{5,}/)?.[0] ?? null;
+}
+
+// 이메일이 같으면 그 계정, 아니면 같은 학번, 아니면 같은 이름. 같은 조건이 여럿이면 포인트가 많은 계정.
+function suggestOldAccount(request) {
+  const email = String(request.googleEmail ?? request.authEmail ?? "").toLowerCase();
+  const number = studentNumber(email);
+  const candidates = linkCandidates(request).sort((a, b) => Number(b.points ?? 0) - Number(a.points ?? 0));
+  const sameEmail = (user) => [user.email, user.authEmail, user.googleEmail].some((value) => String(value ?? "").toLowerCase() === email);
+  return candidates.find(sameEmail)
+    ?? (number && candidates.find((user) => [user.email, user.authEmail].some((value) => studentNumber(value) === number)))
+    ?? candidates.find((user) => user.name && user.name === request.name)
+    ?? null;
+}
+
+function renderLinkRequests() {
+  const requests = users.filter(isGoogleRequest);
+  const exact = requests.filter((request) => {
+    const old = suggestOldAccount(request);
+    const email = String(request.googleEmail ?? request.authEmail ?? "").toLowerCase();
+    return old && [old.email, old.authEmail].some((value) => String(value ?? "").toLowerCase() === email);
+  });
+  $("#link-all-button").hidden = exact.length < 2;
+  $("#link-all-button").textContent = `이메일이 같은 ${exact.length}명 한 번에 연결`;
+  $("#link-list").innerHTML = requests.length
+    ? requests.map(renderLinkRequest).join("")
+    : `<p class="empty-text">구글로 새로 로그인해 연결을 기다리는 학생이 없어요.</p>`;
+}
+
+function renderLinkRequest(request) {
+  const suggested = suggestOldAccount(request);
+  const id = escapeHtml(request.id);
+  const options = linkCandidates(request)
+    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "ko-KR"))
+    .map((user) => `<option value="${escapeHtml(user.id)}"${user.id === suggested?.id ? " selected" : ""}>${escapeHtml(`${user.name ?? "이름 없음"} · ${Number(user.points ?? 0)}점 · ${user.authEmail ?? user.email ?? "-"}`)}</option>`)
+    .join("");
+  return `
+    <article class="dev-user dev-link-request">
+      <div class="dev-user-info">
+        <p class="dev-user-name">${escapeHtml(request.name ?? "이름 없음")}<span class="status-badge status-pending">구글 로그인</span></p>
+        <p class="dev-user-meta">${escapeHtml(request.googleEmail ?? request.authEmail ?? "-")} · ${formatDateTime(request.createdAt)}</p>
+        <label class="dev-link-select">예전 계정
+          <select data-link-select="${id}">
+            <option value="">(예전 계정 없음 · 새 학생)</option>
+            ${options}
+          </select>
+        </label>
+      </div>
+      <div class="dev-user-actions">
+        <button class="approve-button" type="button" data-action="link" data-uid="${id}">기존 기록과 연결</button>
+        <button class="neutral-button" type="button" data-action="approve" data-uid="${id}">새 학생으로 승인</button>
+        <button class="reject-button" type="button" data-action="reject" data-uid="${id}">거절</button>
+      </div>
+    </article>`;
+}
+
 function renderStats() {
-  const students = users.filter((user) => user.role !== "teacher");
+  const students = users.filter((user) => user.role !== "teacher" && getStatus(user) !== "linked");
   $("#stat-total").textContent = students.length;
   $("#stat-pending").textContent = students.filter((user) => getStatus(user) === "pending").length;
   $("#stat-approved").textContent = students.filter((user) => getStatus(user) === "approved").length;
@@ -128,7 +197,8 @@ function renderStats() {
 }
 
 function renderPending() {
-  const pending = users.filter((user) => user.role !== "teacher" && getStatus(user) === "pending");
+  renderLinkRequests();
+  const pending = users.filter((user) => user.role !== "teacher" && getStatus(user) === "pending" && !isGoogleRequest(user));
   pendingList.innerHTML = pending.length
     ? pending.map(renderUserItem).join("")
     : `<p class="empty-text">승인을 기다리는 학생이 없습니다.</p>`;
@@ -139,6 +209,7 @@ function renderUsers() {
   const status = statusFilter.value;
 
   const filtered = users.filter((user) => {
+    if (getStatus(user) === "linked" || isGoogleRequest(user)) return false;
     if (status !== "all" && (user.role === "teacher" || getStatus(user) !== status)) return false;
     if (!keyword) return true;
     return [user.name, user.email, user.authEmail].some((value) => String(value ?? "").toLowerCase().includes(keyword));
@@ -157,6 +228,7 @@ function renderUserItem(user) {
     : `<span class="status-badge status-${status}">${statusLabels[status]}</span>`;
   const meta = [
     user.email ?? user.authEmail ?? "-",
+    teacher ? null : user.googleEmail ? "구글 로그인" : "예전 비밀번호(구글 연결 전)",
     teacher ? null : `${Number(user.points ?? 0)}점`,
     `가입 ${formatDateTime(user.createdAt)}`,
   ].filter(Boolean).join(" · ");
@@ -167,17 +239,15 @@ function renderUserItem(user) {
         <p class="dev-user-name">${escapeHtml(user.name ?? "이름 없음")}${badge}</p>
         <p class="dev-user-meta">${escapeHtml(meta)}</p>
       </div>
-      ${teacher ? "" : `<div class="dev-user-actions">${renderActions(user.id, status)}</div>`}
+      ${teacher || status === "linked" ? "" : `<div class="dev-user-actions">${renderActions(user.id, status, Boolean(user.googleEmail))}</div>`}
     </article>
   `;
 }
 
-function resetButton(id) {
-  return `<button class="neutral-button" type="button" data-action="password" data-uid="${id}">비밀번호 재설정</button>`;
-}
-
-function renderActions(uid, status) {
+function renderActions(uid, status, google) {
   const id = escapeHtml(uid);
+  // 구글로 들어오는 학생은 비밀번호가 없다. 구글 연결 전 학생은 '구글 로그인 열기'로 구글 로그인을 받을 수 있게 한다.
+  const resetButton = (value) => (google ? "" : `<button class="neutral-button" type="button" data-action="open-google" data-uid="${value}">구글 로그인 열기</button><button class="neutral-button" type="button" data-action="password" data-uid="${value}">비밀번호 재설정</button>`);
   if (status === "pending") {
     return `${resetButton(id)}
       <button class="approve-button" type="button" data-action="approve" data-uid="${id}">승인</button>
@@ -203,6 +273,36 @@ async function handleActionClick(event) {
     await handlePasswordReset(user, button);
     return;
   }
+  if (button.dataset.action === "open-google") {
+    if (!confirm(`${name} 학생의 예전 로그인 이메일을 비워 둘까요?\n그러면 학생이 학교 구글 계정으로 로그인할 수 있고, 위 '구글 로그인 연결'에 나오면 '기존 기록과 연결'을 누르면 돼요.\n(예전 비밀번호 로그인은 이제 안 돼요)`)) return;
+    button.disabled = true;
+    try {
+      await openGoogleLogin(user);
+      setMessage(devMessage, `${name} 학생: 이제 학교 구글 계정으로 로그인하라고 해 주세요. 로그인하면 위 '구글 로그인 연결'에 나와요.`);
+    } catch (error) {
+      button.disabled = false;
+      setMessage(devMessage, error.message || "처리하지 못했어요.");
+    }
+    return;
+  }
+  if (button.dataset.action === "link") {
+    const oldId = document.querySelector(`[data-link-select="${CSS.escape(user.id)}"]`)?.value;
+    const old = users.find((item) => item.id === oldId);
+    if (!old) {
+      setMessage(devMessage, "연결할 예전 계정을 먼저 고르세요. 예전 계정이 없으면 '새 학생으로 승인'을 누르세요.");
+      return;
+    }
+    if (!confirm(`${user.googleEmail ?? user.authEmail} 구글 로그인을\n예전 계정 '${old.name}' (${Number(old.points ?? 0)}점)에 연결할까요?\n연결하면 예전 비밀번호는 지워지고, 학생은 구글로만 들어와요.`)) return;
+    button.disabled = true;
+    try {
+      await linkGoogleAccount(user, old);
+      setMessage(devMessage, `${old.name} 학생을 연결했어요. 학생에게 '다시 구글로 로그인'을 누르라고 해 주세요.`);
+    } catch (error) {
+      button.disabled = false;
+      setMessage(devMessage, error.message || "연결하지 못했어요.");
+    }
+    return;
+  }
   if (button.dataset.action === "reject" && !confirm(`${name} 학생을 ${getStatus(user) === "approved" ? "승인 취소" : "거절"}할까요? 학생은 앱을 이용할 수 없게 됩니다.`)) {
     return;
   }
@@ -220,6 +320,102 @@ async function handleActionClick(event) {
     button.disabled = false;
     setMessage(devMessage, "상태를 바꾸지 못했습니다. 데이터베이스 규칙을 최신 버전으로 게시했는지 확인해주세요.");
   }
+}
+
+// ── 구글 계정을 예전 계정에 붙이기 ──
+// 기록(포인트·출석·구매)은 예전 계정 번호(uid)에 있으므로, 새로 생긴 구글 계정을 지우고
+// 그 구글 로그인을 예전 계정에 연결한다. 학생이 다시 구글로 로그인하면 예전 계정으로 들어간다.
+
+async function ownerApi(method, body) {
+  let token = await getOwnerToken();
+  const call = (value) => fetch(`https://identitytoolkit.googleapis.com/v1/projects/${firebaseConfig.projectId}/accounts:${method}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${value}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let response = await call(token);
+  if (response.status === 401) {
+    ownerToken = null;
+    token = await getOwnerToken();
+    response = await call(token);
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const code = data?.error?.message ?? "";
+    if (response.status === 403) throw new Error(passwordErrorMessage(403, code));
+    if (code.startsWith("EMAIL_EXISTS")) throw new Error("그 이메일을 쓰는 다른 로그인 계정이 있어요. Firebase 콘솔에서 중복 계정을 확인해 주세요.");
+    throw new Error(`처리하지 못했어요. (${response.status} ${code})`);
+  }
+  return data;
+}
+
+async function linkGoogleAccount(request, old) {
+  const lookup = await ownerApi("lookup", { localId: [request.id, old.id] });
+  const fresh = lookup.users?.find((item) => item.localId === request.id);
+  const previous = lookup.users?.find((item) => item.localId === old.id);
+  const google = fresh?.providerUserInfo?.find((info) => info.providerId === "google.com");
+  if (!fresh || !google) throw new Error("새 구글 로그인 계정을 찾지 못했어요. 이미 연결됐을 수 있어요.");
+  if (!String(google.email ?? "").toLowerCase().endsWith(`@${SCHOOL_EMAIL_DOMAIN}`)) throw new Error("학교 계정이 아니라서 연결할 수 없어요.");
+  if (!previous) throw new Error("예전 계정의 로그인 정보가 없어요(Firebase에서 지워짐). '새 학생으로 승인'을 쓰세요.");
+  if (previous.providerUserInfo?.some((info) => info.providerId === "google.com")) throw new Error("그 예전 계정에는 이미 다른 구글 계정이 연결돼 있어요.");
+
+  const linkInfo = { providerId: "google.com", rawId: google.rawId, email: google.email, displayName: google.displayName ?? request.name ?? "" };
+  // 같은 구글 로그인은 한 계정에만 붙을 수 있어서, 새로 생긴 계정을 먼저 지운다.
+  await ownerApi("delete", { localId: request.id });
+  const updateBody = { localId: old.id, email: google.email, emailVerified: true, linkProviderUserInfo: linkInfo };
+  if (previous.providerUserInfo?.some((info) => info.providerId === "password")) updateBody.deleteProvider = ["password"];
+  try {
+    await ownerApi("update", updateBody);
+  } catch (error) {
+    // 실패하면 지운 구글 계정을 같은 번호로 되살려, 학생이 다시 시도할 수 있게 한다.
+    await ownerApi("batchCreate", { users: [{ localId: request.id, email: google.email, emailVerified: true, displayName: linkInfo.displayName, providerUserInfo: [linkInfo] }] }).catch(() => {});
+    throw error;
+  }
+  await update(ref(db), {
+    [`users/${old.id}/email`]: google.email,
+    [`users/${old.id}/authEmail`]: google.email,
+    [`users/${old.id}/googleEmail`]: google.email,
+    [`users/${old.id}/loginProvider`]: "google",
+    [`users/${old.id}/googleLinkedAt`]: serverTimestamp(),
+    [`users/${request.id}/status`]: "linked",
+    [`users/${request.id}/linkedTo`]: old.id,
+  });
+}
+
+// 한 이메일에 계정이 하나만 허용되므로, 예전 계정이 학교 이메일을 쥐고 있으면 구글 로그인이 거절된다.
+// 예전 계정의 로그인 이메일을 임시 주소로 바꿔 두면 학생의 구글 로그인이 연결 요청으로 들어온다(연결할 때 다시 학교 이메일로 바뀜).
+async function openGoogleLogin(user) {
+  const lookup = await ownerApi("lookup", { localId: [user.id] });
+  const account = lookup.users?.[0];
+  if (!account) throw new Error("로그인 계정을 찾지 못했어요(Firebase에서 지워짐).");
+  if (account.providerUserInfo?.some((info) => info.providerId === "google.com")) throw new Error("이미 구글과 연결된 계정이에요.");
+  const placeholder = `relink-${user.id.toLowerCase()}@relink.invalid`;
+  if (account.email !== placeholder) {
+    await ownerApi("update", { localId: user.id, email: placeholder, ...(account.providerUserInfo?.some((info) => info.providerId === "password") ? { deleteProvider: ["password"] } : {}) });
+  }
+  await update(ref(db, `users/${user.id}`), { googleOpenedAt: serverTimestamp() });
+}
+
+async function handleLinkAll() {
+  const requests = users.filter(isGoogleRequest).map((request) => [request, suggestOldAccount(request)]).filter(([request, old]) => {
+    const email = String(request.googleEmail ?? request.authEmail ?? "").toLowerCase();
+    return old && [old.email, old.authEmail].some((value) => String(value ?? "").toLowerCase() === email);
+  });
+  if (!requests.length || !confirm(`이메일이 같은 ${requests.length}명을 예전 계정에 연결할까요?`)) return;
+  const button = $("#link-all-button");
+  button.disabled = true;
+  let done = 0;
+  const failed = [];
+  for (const [request, old] of requests) {
+    try {
+      await linkGoogleAccount(request, old);
+      done += 1;
+    } catch (error) {
+      failed.push(`${request.name}: ${error.message}`);
+    }
+  }
+  button.disabled = false;
+  setMessage(devMessage, `${done}명 연결했어요.${failed.length ? ` 실패: ${failed.join(" / ")}` : ""}`);
 }
 
 // ── 비밀번호 재설정 (선생님이 새 비밀번호를 정해 줌, 지금 비밀번호는 볼 수 없음) ──

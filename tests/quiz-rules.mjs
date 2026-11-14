@@ -84,6 +84,19 @@ await assert.rejects(bob.ref("quiz/attempts/q3").get());
 assert.ok((await teacher.ref("quiz/attempts/q3").get()).exists());
 // 선생님은 문제와 기록을 한꺼번에 지울 수 있다
 await teacher.ref().update({ "quiz/questions/q1": null, "quiz/answers/q1": null, "quiz/attempts/q1": null, "quiz/correct/q1": null, "quiz/awards/q1": null });
+// 새 가입은 인증된 학교 구글 계정(@junghwa.sen.ms.kr)만
+const asToken = (name, uid, token) => getDatabase(initializeApp({ ...opts, databaseAuthVariableOverride: { uid, token } }, name));
+const profile = (email) => ({ name: "새 학생", email, authEmail: email, role: "student", status: "pending", points: 0, todayResult: "-", loginProvider: "google" });
+const school = "202620599@junghwa.sen.ms.kr";
+await asToken("g1", "g1", { email: school, email_verified: true }).ref("users/g1").set(profile(school));
+await assert.rejects(asToken("g2", "g2", { email: "kid@gmail.com", email_verified: true }).ref("users/g2").set(profile("kid@gmail.com")));
+await assert.rejects(asToken("g3", "g3", { email: "202620598@junghwa.sem.ms.kr", email_verified: true }).ref("users/g3").set(profile("202620598@junghwa.sem.ms.kr")));
+await assert.rejects(asToken("g4", "g4", { email: "x@junghwa.sen.ms.kr.evil.com", email_verified: true }).ref("users/g4").set(profile("x@junghwa.sen.ms.kr.evil.com")));
+await assert.rejects(asToken("g5", "g5", { email: "202620597@junghwa.sen.ms.kr", email_verified: false }).ref("users/g5").set(profile("202620597@junghwa.sen.ms.kr")));
+// 학생은 스스로 승인하거나 연결 상태로 바꿀 수 없고, 선생님은 '연결됨'으로 바꿀 수 있다
+const g1 = getDatabase(initializeApp({ ...opts, databaseAuthVariableOverride: { uid: "g1", token: { email: school, email_verified: true } } }, "g1b"));
+await assert.rejects(g1.ref("users/g1/status").set("approved"));
+await teacher.ref().update({ "users/g1/status": "linked", "users/g1/linkedTo": "bob", "users/bob/googleEmail": school });
 // 예전 게임 기록은 읽기 전용
 await assert.rejects(bob.ref("academy/history/bob/0").set({ 0: 5 }));
 console.log("quiz rules ok");

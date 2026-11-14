@@ -10,14 +10,14 @@
       ],
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (!data.exists() && auth.uid == $uid && newData.child('role').val() == 'student' && newData.child('points').val() == 0 && newData.child('authEmail').val() == auth.token.email && newData.child('status').val() == 'pending') || (!data.exists() && auth.uid == $uid && auth.token.email == 'admin@admin.com' && newData.child('role').val() == 'teacher') || (data.exists() && auth.uid == $uid && newData.child('role').val() == data.child('role').val() && newData.child('authEmail').val() == data.child('authEmail').val() && newData.child('points').isNumber() && newData.child('points').val() >= 0 && ((!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') || newData.child('points').val() == data.child('points').val()) && ((!data.child('status').exists() && !newData.child('status').exists()) || newData.child('status').val() == data.child('status').val())))",
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (!data.exists() && auth.uid == $uid && newData.child('role').val() == 'student' && newData.child('points').val() == 0 && newData.child('authEmail').val() == auth.token.email && newData.child('status').val() == 'pending' && auth.token.email_verified == true && auth.token.email.matches(/@junghwa\\.sen\\.ms\\.kr$/)) || (!data.exists() && auth.uid == $uid && auth.token.email == 'admin@admin.com' && newData.child('role').val() == 'teacher') || (data.exists() && auth.uid == $uid && newData.child('role').val() == data.child('role').val() && newData.child('authEmail').val() == data.child('authEmail').val() && newData.child('points').isNumber() && newData.child('points').val() >= 0 && ((!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') || newData.child('points').val() == data.child('points').val()) && ((!data.child('status').exists() && !newData.child('status').exists()) || newData.child('status').val() == data.child('status').val())))",
         ".validate": "newData.hasChildren(['email', 'authEmail', 'role', 'points', 'name'])",
         "points": {
           ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher' || (auth.uid == $uid && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved')))",
           ".validate": "newData.isNumber() && newData.val() >= 0"
         },
         "status": {
-          ".validate": "newData.val() == 'pending' || newData.val() == 'approved' || newData.val() == 'rejected'"
+          ".validate": "newData.val() == 'pending' || newData.val() == 'approved' || newData.val() == 'rejected' || newData.val() == 'linked'"
         }
       }
     },
