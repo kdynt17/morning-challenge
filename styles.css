@@ -1,6 +1,6 @@
 /* 아침 챌린지 전체 디자인 = 두뇌교실(academy/styles.css)과 같은 DS 『말랑말랑 두뇌교실』 스타일.
    두뇌교실 디자인 토큰·공통 부품을 그대로 가져오고, 바깥 앱(출석·상점·순위·추가 게임·관리)의 부품만 같은 모양으로 맞춘다. */
-@import url("academy/styles.css?v=20261019-sfx");
+@import url("academy/styles.css?v=20261114-quiz");
 
 :root {
   /* 바깥 앱·개발자 페이지에서 쓰던 이름을 두뇌교실 색으로 연결 */
@@ -1400,3 +1400,64 @@ a.points-pill {
 .sale-ends-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .sale-ends-row input { max-width: 190px; padding: 4px 6px; font-size: 13px; }
 .inline-action-button.is-on { background: #dff3d8; }
+
+/* ── 오늘의 문제 ── */
+.quiz-home-card h2 { margin: 4px 0; font-family: var(--display); font-size: 22px; }
+.quiz-list { display: grid; gap: 14px; margin-top: 12px; }
+.quiz-card { display: grid; gap: 10px; }
+.quiz-card.is-closed { background: #f4ecd8; }
+.quiz-card.is-solved { border-color: var(--green-dark); }
+.quiz-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.quiz-head .product-price { margin-left: auto; }
+.quiz-title { margin: 0; font-family: var(--display); font-size: 21px; }
+.quiz-author { margin: -6px 0 0; color: var(--muted); font-size: 14px; }
+.quiz-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; line-height: 1.55; }
+.quiz-image { width: 100%; max-height: 360px; object-fit: contain; border: 3px solid var(--ink); border-radius: 14px; background: #fff; }
+.quiz-form { display: grid; gap: 10px; }
+.quiz-choices { display: grid; gap: 8px; }
+.quiz-choice { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px; border: 3px solid var(--ink); border-radius: 14px; background: #fff; cursor: pointer; overflow-wrap: anywhere; }
+.quiz-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.quiz-choice:has(input:checked) { background: var(--yellow); box-shadow: var(--shadow); }
+.quiz-choice:has(input:focus-visible) { outline: 3px solid var(--blue); outline-offset: 2px; }
+.quiz-mark { flex: none; font-family: var(--display); font-size: 20px; }
+.quiz-choice-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.quiz-choice-list li { display: flex; gap: 8px; overflow-wrap: anywhere; }
+.quiz-answer-input { width: 100%; min-height: 50px; padding: 10px 14px; border: 3px solid var(--ink); border-radius: 14px; font-family: var(--body); font-size: 18px; }
+.quiz-result { margin: 0; padding: 10px 12px; border-radius: 12px; background: #f1e7cf; font-weight: 700; }
+.quiz-result.is-correct { background: #dff3d8; color: #2f7a28; }
+.quiz-result.is-wrong { background: #ffe1dc; color: #b3261e; }
+.quiz-revealed { margin: 0; padding: 8px 12px; border: 2px dashed var(--ink); border-radius: 12px; background: #fff3b0; }
+.quiz-ranking summary { cursor: pointer; font-family: var(--display); font-size: 16px; }
+.quiz-ranking ol { display: grid; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; }
+.quiz-ranking li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px; background: #fff; }
+.quiz-ranking li.rank-mine { background: #fff3b0; }
+.quiz-ranking li .rank-meta { margin-left: auto; }
+.quiz-rank-no { min-width: 38px; font-family: var(--display); }
+.quiz-ranking li:nth-child(1) .quiz-rank-no { color: #c48a00; }
+
+/* 선생님: 문제 올리기·관리 */
+.q-type-tabs { display: flex; gap: 8px; }
+.q-type-tabs label { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 3px solid var(--ink); border-radius: 999px; background: #fff; cursor: pointer; }
+.q-type-tabs label:has(input:checked) { background: var(--yellow); }
+.q-choice-box { display: grid; gap: 8px; margin: 0; padding: 10px; border: 3px dashed var(--ink); border-radius: 14px; }
+.q-choice-box[hidden] { display: none; }
+.q-choice-box legend { padding: 0 6px; font-family: var(--display); font-size: 14px; }
+#q-choice-rows { display: grid; gap: 8px; }
+.q-choice-row { display: flex; align-items: center; gap: 8px; }
+.q-choice-row .q-choice-input { flex: 1; min-width: 0; }
+.stack-form .q-correct-pick { display: flex; flex: none; align-items: center; justify-content: center; width: 44px; height: 44px; border: 3px solid var(--ink); border-radius: 50%; background: #fff; cursor: pointer; font-size: 20px; }
+.q-correct-pick input { position: absolute; opacity: 0; pointer-events: none; }
+.q-correct-pick:has(input:checked) { background: var(--green); color: #fff; }
+.q-number-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.admin-question { display: grid; gap: 6px; padding: 10px 12px; border: 3px solid var(--ink); border-radius: 14px; background: #fff; }
+.admin-question.is-off { background: #f7f1e3; }
+.admin-question p { margin: 0; overflow-wrap: anywhere; }
+.admin-question-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-question summary { cursor: pointer; font-family: var(--display); }
+.admin-rank, .admin-wrong { display: grid; gap: 4px; margin: 6px 0; padding-left: 18px; }
+.forgot-box { display: grid; gap: 8px; margin-top: 8px; padding: 12px; border: 3px dashed var(--ink); border-radius: 14px; background: #fff8dc; }
+.forgot-box[hidden] { display: none; }
+.forgot-box p { margin: 0; }
+.stack-form .q-type-tabs input { width: auto; min-height: 0; margin: 0; padding: 0; }
+.stack-form .q-type-tabs label { display: flex; font-size: 16px; }
+.admin-rank { padding-left: 0; list-style: none; }

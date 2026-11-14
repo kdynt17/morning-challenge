@@ -1,6 +1,4 @@
-import {freeClient} from './academy/free-client.js';
-import {dayKey as academyDay,closesAt as academyEnd,isHiddenUid,GAMES as ACADEMY_GAMES} from './academy/functions/domain.mjs';
-import {mountBrain,brainSummary,GUIDE_HIDDEN_PREFIX} from './academy/brain.js';
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, DEFAULT_TRIES, CHOICE_MARKS, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261114-quiz";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -39,13 +37,14 @@ const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 
 // ── 포인트 설계 ─────────────────────────────────────────────
-// 출석10P(월~금, 로그인하면 자동) + 5영역 도전 순위보상(1등100P~최소20P) + 영역별 연습10P(최대50P).
-// 출석은 자정, 게임은 오전6시 기준.
+// 출석10P(월~금, 로그인하면 자동) + 문제 풀이 맞힌 순서 보상(1등 100P, 한 등수마다 -5P, 최소 1등의 20%).
 const ATTENDANCE_POINTS = 10;
 const STREAK_BONUS_EVERY = 7;
 const STREAK_BONUS_POINTS = 30;
 const LAST_EMAIL_KEY = "mc.lastEmail";
 const LAST_NAME_KEY = "mc.lastName";
+// 학번만 적으면 학교 메일 주소로 바꿔서 로그인한다.
+const SCHOOL_EMAIL_DOMAIN = "junghwa.sen.ms.kr";
 const DAY_MS = 86400000;
 const KST_OFFSET_MS = 9 * 3600000;
 
@@ -94,7 +93,7 @@ const attendanceButton = $("#attendance-button");
 
 const pageNames = {
   home: "홈",
-  games: "두뇌교실",
+  quiz: "오늘의 문제",
   leaderboard: "순위",
   store: "포인트 상점",
   profile: "내 정보",
@@ -111,12 +110,18 @@ let unsubscribers = [];
 let rankUnsubscribe = null;
 let serverOffsetMs = 0;
 let attendance = null;
-let brainData = null;
 let toastTimer = null;
 let sessionDay = null;
-let brainMount = null;
-// 선생님이 켜면 학생은 게임을 시작할 수 없다(settings/gamesLocked).
+// 선생님이 켜면 학생은 문제 답을 낼 수 없다(settings/gamesLocked, 예전 게임 잠금 자리를 그대로 쓴다).
 let gamesLocked = false;
+// 문제 풀이
+let quizQuestions = [];
+const quizCorrect = {};
+const quizMine = {};
+const quizAwards = {};
+const quizAwarding = new Set();
+let quizUnsubs = {};
+let adminQuizData = { answers: {}, attempts: {}, awards: {} };
 // 선생님이 상점을 닫으면 학생은 아무것도 살 수 없다(settings/storeClosed).
 let storeClosed = false;
 let storeProducts = [];
@@ -138,7 +143,23 @@ if (setupRequired) {
   showLoginButton.addEventListener("click", () => setAuthMode("login"));
   showSignupButton.addEventListener("click", () => setAuthMode("signup"));
   loginForm.addEventListener("submit", handleLogin);
-  $("#forgot-password-button").addEventListener("click", handlePasswordReset);
+  $("#forgot-password-button").addEventListener("click", () => {
+    const box = $("#forgot-password-box");
+    box.hidden = !box.hidden;
+  });
+  $("#send-reset-mail-button").addEventListener("click", handlePasswordReset);
+  $("#question-form").addEventListener("submit", handleQuestionSave);
+  $("#question-form").addEventListener("change", (event) => {
+    if (event.target.name === "q-type") renderQuestionTypeFields();
+  });
+  $("#quiz-list").addEventListener("submit", handleQuizSubmit);
+  $("#quiz-list").addEventListener("change", (event) => {
+    // 객관식 보기를 고르면 제출 버튼을 켠다.
+    const form = event.target.closest("form[data-qid]");
+    if (form) form.querySelector("button[type=submit]").disabled = !form.querySelector("input[name=choice]:checked");
+  });
+  $("#admin-question-list").addEventListener("click", handleAdminQuestionClick);
+  renderChoiceRows();
   signupForm.addEventListener("submit", handleSignup);
   $("#logout-button").addEventListener("click", () => signOut(auth));
   $("#pending-logout-button").addEventListener("click", () => signOut(auth));
@@ -152,18 +173,13 @@ if (setupRequired) {
   document.querySelectorAll("[data-target-page]").forEach((button) => {
     button.addEventListener("click", () => showPage(button.dataset.targetPage));
   });
-  // 휴대폰·브라우저 뒤로 가기: 앱 안의 이전 화면으로 돌아간다(두뇌교실 게임은 brain.js가 따로 닫는다).
+  // 휴대폰·브라우저 뒤로 가기: 앱 안의 이전 화면으로 돌아간다.
   window.addEventListener("popstate", (event) => {
     if (!document.body.classList.contains("is-authenticated")) return;
     const page = event.state?.page ?? "home";
     showPage(pageNames[page] ? page : "home", { push: false });
   });
 
-  // 내 정보 → 게임 설명서 다시 보이게 하기
-  $("#show-tutorials-button").addEventListener("click", () => {
-    ACADEMY_GAMES.forEach((game) => storeLocal(GUIDE_HIDDEN_PREFIX + game.id, null));
-    showToast("연습을 시작하면 설명서가 다시 나와요.");
-  });
   setAuthMode("login");
 
   // 자정이나 월이 바뀐 채로 화면을 켜 두면 날짜 기준 구독을 새로 연다.
@@ -181,7 +197,6 @@ if (setupRequired) {
     currentProfile = null;
     selectedProduct = null;
     attendance = null;
-    brainData = null;
 
     if (!user) {
       showSignedOut();
@@ -204,10 +219,10 @@ if (setupRequired) {
       waitForApproval();
       return;
     }
-    // 두뇌교실 화면의 아래 메뉴에서 ?page=store 처럼 들어오면 그 화면을 연다.
+    // ?page=store 처럼 들어오면 그 화면을 연다(예전 두뇌교실 주소 ?page=games 는 문제 화면으로).
     const params = new URLSearchParams(location.search);
-    const requestedPage = params.get("page");
-    enterApp(params.has("game") ? "games" : ["games", "leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
+    const requestedPage = params.get("page") === "games" || params.has("game") ? "quiz" : params.get("page");
+    enterApp(["quiz", "leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
   });
 }
 
@@ -219,9 +234,7 @@ function enterApp(page = "home") {
   showPage(page, { push: false });
   subscribeProfile();
   subscribeAttendance();
-  mountAcademy();
-  subscribeGameDaily();
-  subscribeBrain();
+  subscribeQuiz();
   subscribePointsLeaderboard();
   subscribeStore();
   subscribePurchaseHistory();
@@ -279,9 +292,9 @@ async function handleLogin(event) {
 }
 
 async function handlePasswordReset() {
-  const email = $("#login-email").value.trim();
+  const email = normalizeLoginEmail($("#login-email").value);
   if (!email) {
-    setMessage(authMessage, "위 이메일 칸에 가입한 이메일을 먼저 입력하세요.");
+    setMessage(authMessage, "위 칸에 학번이나 가입한 이메일을 먼저 입력하세요.");
     $("#login-email").focus();
     return;
   }
@@ -294,7 +307,7 @@ async function handlePasswordReset() {
     setMessage(authMessage, "재설정 메일을 보내는 중입니다.");
     auth.languageCode = "ko";
     await sendPasswordResetEmail(auth, email);
-    setMessage(authMessage, `${email}로 비밀번호 재설정 메일을 보냈습니다. 메일함(스팸함 포함)에서 링크를 눌러 새 비밀번호를 정하세요.`);
+    setMessage(authMessage, `${email}로 재설정 메일을 보냈어요. 메일함(스팸함 포함)에서 링크를 눌러 새 비밀번호를 정하세요. 메일이 안 오면 선생님께 말해 주세요.`);
   } catch (error) {
     setMessage(authMessage, authErrorMessage(error.code));
   }
@@ -394,7 +407,7 @@ function renderProfile(user, profile) {
   $("#profile-email").textContent = profile?.email ?? user.email;
   $("#profile-role").textContent = teacher ? "선생님" : "학생";
   $("#greeting").textContent = `${name} 님, ${greetingByHour()}`;
-  profileMessage.textContent = teacher ? "선생님 계정은 포인트와 게임 기록이 저장되지 않아요." : "";
+  profileMessage.textContent = teacher ? "선생님 계정은 포인트와 문제 풀이 기록이 저장되지 않아요." : "";
   adminNavButton.hidden = !teacher;
   document.body.classList.toggle("is-teacher", teacher);
   renderAttendance();
@@ -435,7 +448,7 @@ function setAuthMode(mode) {
   showSignupButton.classList.toggle("active", isSignup);
   showLoginButton.setAttribute("aria-selected", String(!isSignup));
   showSignupButton.setAttribute("aria-selected", String(isSignup));
-  setMessage(authMessage, isSignup ? "이름, 이메일, 비밀번호를 입력하세요." : "이메일과 비밀번호로 로그인하세요.");
+  setMessage(authMessage, isSignup ? "이름, 이메일, 비밀번호를 입력하세요." : "학번(또는 이메일)과 비밀번호로 로그인하세요.");
 }
 
 function showSplash() {
@@ -476,8 +489,6 @@ function showPage(page, { push = true } = {}) {
   if (!pageNames[page]) page = "home";
   const current = document.querySelector(".page.active-page")?.dataset.page;
   if (push && page !== current) history.pushState({ page }, "");
-  // 두뇌교실 밖으로 나가면 진행 중인 게임 화면을 닫는다(오늘의 도전은 '이어서 하기'로 돌아올 수 있음).
-  if (page !== "games") brainMount?.exit?.();
   document.querySelectorAll(".page").forEach((section) => {
     section.classList.toggle("active-page", section.dataset.page === page);
   });
@@ -490,37 +501,19 @@ function showPage(page, { push = true } = {}) {
   window.scrollTo({ top: 0 });
 }
 
-// ── 두뇌교실 (같은 화면 안에서 연다) ─────────────────────────
-
-function mountAcademy() {
-  const root = $("#brain-root");
-  brainMount?.();
-  brainMount = null;
-  if (isTeacher(currentProfile, currentUser)) {
-    root.innerHTML = `<p class="empty-text">두뇌교실 게임은 학생 계정으로 참여해요.</p>`;
-    return;
-  }
-  if (gamesLocked) {
-    root.innerHTML = `<p class="empty-text">지금은 선생님이 게임을 잠가 두었어요. 잠금이 풀리면 다시 할 수 있어요.</p>`;
-    return;
-  }
-  brainMount = mountBrain({ db, user: currentUser, root });
-}
-
-// ── 게임 잠금 (선생님이 켜고 끔) ───────────────────────────
+// ── 문제 풀이 잠금 (선생님이 켜고 끔, DB 자리는 예전 게임 잠금 settings/gamesLocked) ──
 
 function subscribeGameLock() {
+  let firstLoad = true;
   const unsubscribe = onValue(ref(db, "settings/gamesLocked"), (snapshot) => {
     const locked = snapshot.val() === true;
-    const changed = locked !== gamesLocked;
+    const changed = locked !== gamesLocked && !firstLoad;
+    firstLoad = false;
     gamesLocked = locked;
     renderGameLockAdmin();
+    renderQuiz();
     if (!changed || isTeacher(currentProfile, currentUser)) return;
-    if (locked) {
-      brainMount?.exit?.();
-      showToast("선생님이 게임을 잠갔어요. 하던 오늘의 도전은 잠금이 풀리면 처음부터 다시 해요.");
-    }
-    mountAcademy();
+    showToast(locked ? "선생님이 문제 풀이를 잠갔어요." : "문제 풀이 잠금이 풀렸어요.");
   }, () => {});
   unsubscribers.push(unsubscribe);
 }
@@ -529,19 +522,482 @@ function renderGameLockAdmin() {
   const button = $("#game-lock-toggle");
   if (!button) return;
   $("#game-lock-status").textContent = gamesLocked
-    ? "지금 학생들은 게임을 할 수 없어요. 잠글 때 오늘의 도전을 하던 학생은 풀린 뒤 처음부터 다시 해요."
-    : "지금 학생들은 게임을 할 수 있어요.";
-  button.textContent = gamesLocked ? "게임 잠금 풀기" : "게임 잠그기";
+    ? "지금 학생들은 문제를 볼 수는 있지만 답을 낼 수 없어요."
+    : "지금 학생들은 공개된 문제에 답을 낼 수 있어요.";
+  button.textContent = gamesLocked ? "문제 풀이 잠금 풀기" : "문제 풀이 잠그기";
 }
 
 async function handleGameLockToggle() {
   if (!isTeacher(currentProfile, currentUser)) return;
   try {
-    // 잠글 때 시각을 남긴다. 그때 오늘의 도전을 하던 학생은 잠금이 풀린 뒤 처음부터 다시 한다.
-    await update(ref(db, "settings"), gamesLocked ? { gamesLocked: false } : { gamesLocked: true, lockResetAt: serverTimestamp() });
+    await set(ref(db, "settings/gamesLocked"), !gamesLocked);
   } catch (error) {
     setMessage(adminMessage, authErrorMessage(error.code));
   }
+}
+
+// ── 오늘의 문제 (선생님이 올리고, 먼저 맞힌 순서대로 포인트) ──────────────
+// 채점은 DB 규칙이 한다: 정답(quiz/answers)은 선생님만 읽을 수 있고,
+// 학생은 답을 quiz/attempts에 적은 뒤 quiz/correct에 '맞혔다'를 써 본다. 정답이 아니면 규칙이 거절한다.
+
+function subscribeQuiz() {
+  const questionsQuery = query(ref(db, "quiz/questions"), orderByChild("createdAt"), limitToLast(80));
+  unsubscribers.push(onValue(questionsQuery, (snapshot) => {
+    const list = [];
+    snapshot.forEach((child) => {
+      list.push({ id: child.key, ...child.val() });
+    });
+    list.sort((a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
+    list.forEach((question, index) => { question.number = index + 1; });
+    quizQuestions = list;
+    syncQuizSubscriptions();
+    renderQuiz();
+    renderAdminQuestions();
+  }, () => {
+    $("#quiz-list").innerHTML = `<p class="empty-text">문제를 불러오지 못했어요. 선생님께 말해 주세요.</p>`;
+  }));
+}
+
+// 학생에게 보이는 문제: 받는 중이거나 마감된 문제(한 번도 공개 안 한 문제는 숨김)
+function isVisibleQuestion(question) {
+  return question.open === true || Boolean(question.closedAt);
+}
+
+function watchQuiz(key, path, onData) {
+  if (quizUnsubs[key]) return;
+  quizUnsubs[key] = onValue(ref(db, path), (snapshot) => onData(snapshot.val()), () => {});
+}
+
+function syncQuizSubscriptions() {
+  const teacher = isTeacher(currentProfile, currentUser);
+  const wanted = new Set();
+  for (const question of quizQuestions) {
+    const qid = question.id;
+    if (!teacher && !isVisibleQuestion(question)) continue;
+    wanted.add(`correct:${qid}`);
+    watchQuiz(`correct:${qid}`, `quiz/correct/${qid}`, (value) => {
+      quizCorrect[qid] = value ?? {};
+      maybeResumeAward(qid);
+      renderQuiz();
+      renderAdminQuestions();
+    });
+    if (teacher) {
+      wanted.add(`attempts:${qid}`).add(`awards:${qid}`);
+      watchQuiz(`attempts:${qid}`, `quiz/attempts/${qid}`, (value) => { adminQuizData.attempts[qid] = value ?? {}; renderAdminQuestions(); });
+      watchQuiz(`awards:${qid}`, `quiz/awards/${qid}`, (value) => { adminQuizData.awards[qid] = value ?? {}; renderAdminQuestions(); });
+    } else {
+      wanted.add(`mine:${qid}`).add(`award:${qid}`);
+      watchQuiz(`mine:${qid}`, `quiz/attempts/${qid}/${currentUser.uid}`, (value) => { quizMine[qid] = value; renderQuiz(); });
+      watchQuiz(`award:${qid}`, `quiz/awards/${qid}/${currentUser.uid}`, (value) => {
+        quizAwards[qid] = value;
+        maybeResumeAward(qid);
+        renderQuiz();
+      });
+    }
+  }
+  for (const key of Object.keys(quizUnsubs)) {
+    if (wanted.has(key)) continue;
+    quizUnsubs[key]();
+    delete quizUnsubs[key];
+  }
+}
+
+function questionById(qid) {
+  return quizQuestions.find((question) => question.id === qid);
+}
+
+function myRankIn(qid) {
+  return correctOrder(quizCorrect[qid], isHiddenUid).find((row) => row.uid === currentUser?.uid)?.rank ?? null;
+}
+
+function renderQuiz() {
+  if (!currentUser) return;
+  const teacher = isTeacher(currentProfile, currentUser);
+  const visible = quizQuestions.filter(isVisibleQuestion).reverse();
+  $("#quiz-lock-banner").hidden = !gamesLocked;
+  const list = $("#quiz-list");
+  // 학생이 답을 적는 중이면 그 칸을 다시 그리지 않도록 입력값과 선택을 기억해 둔다.
+  const drafts = {};
+  list.querySelectorAll("form[data-qid]").forEach((form) => {
+    drafts[form.dataset.qid] = {
+      text: form.querySelector("input[name=answer]")?.value ?? "",
+      choice: form.querySelector("input[name=choice]:checked")?.value ?? "",
+      focused: form.contains(document.activeElement),
+    };
+  });
+  list.innerHTML = visible.length
+    ? visible.map((question) => renderQuizCard(question, teacher)).join("")
+    : `<p class="empty-text">아직 올라온 문제가 없어요. 선생님이 문제를 올리면 여기에 나와요.</p>`;
+  for (const [qid, draft] of Object.entries(drafts)) {
+    const form = list.querySelector(`form[data-qid="${CSS.escape(qid)}"]`);
+    if (!form) continue;
+    const input = form.querySelector("input[name=answer]");
+    if (input) {
+      input.value = draft.text;
+      if (draft.focused) input.focus({ preventScroll: true });
+    }
+    const radio = draft.choice && form.querySelector(`input[name=choice][value="${draft.choice}"]`);
+    if (radio) {
+      radio.checked = true;
+      form.querySelector("button[type=submit]").disabled = false;
+    }
+  }
+  renderQuizHome();
+}
+
+function renderQuizCard(question, teacher) {
+  const qid = question.id;
+  const order = correctOrder(quizCorrect[qid], isHiddenUid);
+  const myRank = teacher ? null : myRankIn(qid);
+  const solved = Boolean(quizCorrect[qid]?.[currentUser.uid]);
+  const mine = quizMine[qid];
+  const used = Number(mine?.count ?? 0);
+  const maxTries = Number(question.maxTries ?? 1);
+  const left = Math.max(0, maxTries - used);
+  const award = quizAwards[qid];
+  const choices = Array.isArray(question.choices) ? question.choices : Object.values(question.choices ?? {});
+
+  const statusPill = question.open
+    ? `<span class="pill pill-time">답 받는 중</span>`
+    : `<span class="pill pill-off">마감</span>`;
+  const head = `
+    <div class="quiz-head">
+      <span class="pill">${question.number}번</span>
+      <span class="pill">${question.type === "choice" ? "객관식" : "주관식"}</span>
+      ${statusPill}
+      <span class="product-price">1등 ${formatNumber(question.firstPoints ?? 0)}P</span>
+    </div>
+    ${question.title ? `<h2 class="quiz-title">${escapeHtml(question.title)}</h2>` : ""}
+    ${question.author ? `<p class="quiz-author">출제: ${escapeHtml(question.author)}</p>` : ""}
+    <p class="quiz-text">${escapeHtml(question.text ?? "")}</p>
+    ${question.imageUrl ? `<img class="content-image quiz-image" src="${escapeAttribute(question.imageUrl)}" alt="문제 그림" loading="lazy" />` : ""}
+  `;
+
+  let body = "";
+  if (teacher) {
+    body = question.type === "choice" ? renderChoiceList(choices) : "";
+  } else if (solved) {
+    const points = award?.points ?? pointsForRank(myRank ?? order.length, question.firstPoints);
+    body = `${question.type === "choice" ? renderChoiceList(choices) : ""}
+      <p class="quiz-result is-correct">정답! ${myRank ?? "-"}등으로 맞혔어요 · ${award?.paid ? `+${formatNumber(points)}P 받음` : `+${formatNumber(points)}P 받는 중…`}</p>`;
+  } else if (!question.open || left === 0) {
+    body = `${question.type === "choice" ? renderChoiceList(choices) : ""}
+      <p class="quiz-result ${used ? "is-wrong" : ""}">${used ? `아쉽게 틀렸어요. 내 답: ${escapeHtml(mine?.raw ?? "-")}` : "마감된 문제예요."}</p>`;
+  } else {
+    const locked = gamesLocked;
+    const inputs = question.type === "choice"
+      ? `<div class="quiz-choices">${choices.map((choice, index) => `
+          <label class="quiz-choice"><input type="radio" name="choice" value="${index + 1}" ${locked ? "disabled" : ""} /><span class="quiz-mark">${CHOICE_MARKS[index]}</span><span>${escapeHtml(choice)}</span></label>`).join("")}</div>`
+      : `<input class="quiz-answer-input" name="answer" type="text" maxlength="${MAX_RAW_ANSWER}" autocomplete="off" placeholder="답을 적으세요" ${locked ? "disabled" : ""} required />`;
+    const wrongNote = used ? `<p class="quiz-result is-wrong">틀렸어요 (내 답: ${escapeHtml(mine?.raw ?? "-")}). 기회가 ${left}번 남았어요.</p>` : "";
+    body = `
+      <form class="quiz-form" data-qid="${escapeAttribute(qid)}">
+        ${inputs}
+        ${wrongNote}
+        <button class="primary-button" type="submit" ${locked || question.type === "choice" ? "disabled" : ""}>${locked ? "잠겨 있어요" : `답 내기 · 기회 ${left}번`}</button>
+      </form>`;
+  }
+
+  const revealed = question.revealed ? `<p class="quiz-revealed">정답: <b>${escapeHtml(question.revealed)}</b></p>` : "";
+  const rankItems = order.map((row) => `
+    <li class="${row.uid === currentUser.uid ? "rank-mine" : ""}"><span class="quiz-rank-no">${row.rank}등</span><span>${escapeHtml(row.name ?? "학생")}</span><span class="rank-meta">${formatClock(row.at)}</span></li>`).join("");
+  const ranking = `
+    <details class="quiz-ranking"${order.length && order.length <= 10 ? " open" : ""}>
+      <summary>맞힌 순서 ${order.length}명</summary>
+      ${order.length ? `<ol>${rankItems}</ol>` : `<p class="empty-text">아직 맞힌 사람이 없어요. 1등을 노려 보세요!</p>`}
+    </details>`;
+
+  return `<article class="card quiz-card${question.open ? "" : " is-closed"}${solved ? " is-solved" : ""}">${head}${body}${revealed}${ranking}</article>`;
+}
+
+function renderChoiceList(choices) {
+  return `<ol class="quiz-choice-list">${choices.map((choice, index) => `<li><span class="quiz-mark">${CHOICE_MARKS[index]}</span>${escapeHtml(choice)}</li>`).join("")}</ol>`;
+}
+
+function renderQuizHome() {
+  const teacher = isTeacher(currentProfile, currentUser);
+  const open = quizQuestions.filter((question) => question.open === true);
+  const unsolved = open.filter((question) => !quizCorrect[question.id]?.[currentUser.uid] && Number(quizMine[question.id]?.count ?? 0) < Number(question.maxTries ?? 1));
+  $("#quiz-home-title").textContent = !open.length
+    ? "지금 열린 문제가 없어요"
+    : teacher
+      ? `문제 ${open.length}개가 열려 있어요`
+      : unsolved.length
+        ? `아직 안 푼 문제가 ${unsolved.length}개 있어요!`
+        : "열린 문제를 다 풀었어요";
+  const solvedIds = Object.keys(quizCorrect).filter((qid) => quizCorrect[qid]?.[currentUser.uid]);
+  $("#quiz-solved-count").textContent = solvedIds.length;
+  $("#quiz-solved-caption").textContent = `1등 ${solvedIds.filter((qid) => myRankIn(qid) === 1).length}번`;
+}
+
+async function handleQuizSubmit(event) {
+  event.preventDefault();
+  const form = event.target.closest("form[data-qid]");
+  if (!form || !currentUser || isTeacher(currentProfile, currentUser)) return;
+  const question = questionById(form.dataset.qid);
+  if (!question) return;
+  if (!question.open) return showToast("마감된 문제예요.");
+  if (gamesLocked) return showToast("지금은 선생님이 문제 풀이를 잠가 두었어요.");
+
+  let raw;
+  let key;
+  if (question.type === "choice") {
+    const picked = form.querySelector("input[name=choice]:checked");
+    if (!picked) return showToast("보기를 하나 골라 주세요.");
+    const choices = Array.isArray(question.choices) ? question.choices : Object.values(question.choices ?? {});
+    raw = `${CHOICE_MARKS[picked.value - 1]} ${choices[picked.value - 1] ?? ""}`.trim();
+    key = answerKey("choice", picked.value);
+  } else {
+    raw = form.querySelector("input[name=answer]").value.trim().slice(0, MAX_RAW_ANSWER);
+    key = answerKey("text", raw);
+  }
+  if (!key) return showToast("답을 적어 주세요.");
+
+  const used = Number(quizMine[question.id]?.count ?? 0);
+  const left = Number(question.maxTries ?? 1) - used;
+  if (left <= 0) return showToast("기회를 다 썼어요.");
+  if (!confirm(`'${raw}' (으)로 낼까요?\n${left === 1 ? "마지막 기회예요!" : `기회가 ${left}번 남았어요.`}`)) return;
+
+  const button = form.querySelector("button[type=submit]");
+  button.disabled = true;
+  const qid = question.id;
+  const uid = currentUser.uid;
+  const name = currentProfile?.name ?? "";
+  try {
+    await set(ref(db, `quiz/attempts/${qid}/${uid}`), { name, count: used + 1, last: key, raw, at: serverTimestamp() });
+  } catch (error) {
+    button.disabled = false;
+    return showToast("답을 내지 못했어요. 마감됐거나 잠겼는지 확인해 주세요.");
+  }
+
+  // 맞았으면 규칙이 받아 주고, 틀렸으면 거절한다.
+  try {
+    await set(ref(db, `quiz/correct/${qid}/${uid}`), { name, at: serverTimestamp() });
+  } catch (error) {
+    const remain = left - 1;
+    showToast(remain > 0 ? `틀렸어요. 기회가 ${remain}번 남았어요.` : "아쉽게 틀렸어요. 기회를 다 썼어요.");
+    return;
+  }
+  await awardQuiz(question);
+}
+
+// 맞힌 순서대로 포인트를 받는다. 받기 전에 끊겼으면 다음에 열 때 이어서 받는다.
+function maybeResumeAward(qid) {
+  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
+  if (!quizCorrect[qid]?.[currentUser.uid]) return;
+  if (!(qid in quizAwards)) return;
+  if (quizAwards[qid]?.paid) return;
+  const question = questionById(qid);
+  if (question) void awardQuiz(question);
+}
+
+async function awardQuiz(question) {
+  const qid = question.id;
+  const uid = currentUser.uid;
+  if (quizAwarding.has(qid)) return;
+  quizAwarding.add(qid);
+  try {
+    const awardRef = ref(db, `quiz/awards/${qid}/${uid}`);
+    let award = (await get(awardRef)).val();
+    if (!award) {
+      const order = correctOrder((await get(ref(db, `quiz/correct/${qid}`))).val(), isHiddenUid);
+      const rank = order.find((row) => row.uid === uid)?.rank ?? order.length + 1;
+      award = { rank, points: pointsForRank(rank, question.firstPoints), paid: false, at: serverTimestamp() };
+      await set(awardRef, award);
+    }
+    if (!award.paid) {
+      if (award.points > 0) await addMyPoints(award.points);
+      await update(awardRef, { paid: true });
+      showToast(`정답! ${award.rank}등 · +${formatNumber(award.points)}P`);
+    }
+  } catch (error) {
+    console.error(error);
+    showToast("정답 포인트를 아직 못 받았어요. 앱을 다시 열면 이어서 받아요.");
+  } finally {
+    quizAwarding.delete(qid);
+  }
+}
+
+// ── 선생님: 문제 올리기·관리 ────────────────────────────────
+
+function renderChoiceRows() {
+  $("#q-choice-rows").innerHTML = CHOICE_MARKS.map((mark, index) => `
+    <div class="q-choice-row">
+      <label class="q-correct-pick" title="이 보기를 정답으로"><input type="radio" name="q-correct" value="${index}" ${index === 0 ? "checked" : ""} /><span>${mark}</span></label>
+      <input class="q-choice-input" type="text" maxlength="200" placeholder="보기 ${index + 1}" aria-label="보기 ${index + 1}" />
+    </div>`).join("");
+  renderQuestionTypeFields();
+}
+
+function selectedQuestionType() {
+  return $("#question-form input[name=q-type]:checked")?.value ?? "choice";
+}
+
+function renderQuestionTypeFields() {
+  const type = selectedQuestionType();
+  $("#q-choice-box").hidden = type !== "choice";
+  $("#q-text-answer-box").hidden = type !== "text";
+  $("#q-max-tries").value = DEFAULT_TRIES[type];
+}
+
+async function handleQuestionSave(event) {
+  event.preventDefault();
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const button = event.target.querySelector("button[type=submit]");
+  try {
+    const type = selectedQuestionType();
+    const text = $("#q-text").value.trim();
+    if (!text) throw new Error("문제를 적어 주세요.");
+    let choices = null;
+    let keys;
+    let display;
+    if (type === "choice") {
+      const rows = [...document.querySelectorAll("#q-choice-rows .q-choice-row")].map((row) => ({
+        text: row.querySelector(".q-choice-input").value.trim(),
+        correct: row.querySelector("input[name=q-correct]").checked,
+      })).filter((row) => row.text);
+      if (rows.length < 2) throw new Error("보기를 2개 이상 적어 주세요.");
+      const correctIndex = rows.findIndex((row) => row.correct);
+      if (correctIndex < 0) throw new Error("정답 보기의 동그라미를 눌러 정답을 골라 주세요(빈 보기는 정답이 될 수 없어요).");
+      choices = rows.map((row) => row.text);
+      keys = [answerKey("choice", correctIndex + 1)];
+      display = `${CHOICE_MARKS[correctIndex]} ${choices[correctIndex]}`;
+    } else {
+      const lines = $("#q-text-answer").value;
+      keys = textAnswerKeys(lines);
+      if (!keys.length) throw new Error("주관식 정답을 적어 주세요.");
+      display = lines.split("\n").map((line) => line.trim()).filter(Boolean).join(" / ");
+    }
+    const firstPoints = Math.max(0, Math.min(1000, Math.round(Number($("#q-first-points").value) || 0)));
+    const maxTries = Math.max(1, Math.min(10, Math.round(Number($("#q-max-tries").value) || 1)));
+    const open = $("#q-open").checked;
+    button.disabled = true;
+    setMessage(adminMessage, "문제를 저장하는 중이에요.");
+    const imageUrl = await getImageValue("#q-image-url", "#q-image-file");
+    const qid = push(ref(db, "quiz/questions")).key;
+    await update(ref(db), {
+      [`quiz/questions/${qid}`]: {
+        title: $("#q-title").value.trim(),
+        author: $("#q-author").value.trim(),
+        text,
+        imageUrl,
+        type,
+        choices,
+        firstPoints,
+        maxTries,
+        open,
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.uid,
+      },
+      [`quiz/answers/${qid}`]: { keys: Object.fromEntries(keys.map((key) => [key, true])), display },
+    });
+    event.target.reset();
+    renderChoiceRows();
+    setMessage(adminMessage, open ? "문제를 올렸어요. 학생 화면에 바로 보여요." : "문제를 저장했어요(아직 숨김). 아래에서 '공개하기'를 누르면 보여요.");
+    showToast("문제를 저장했어요.");
+  } catch (error) {
+    setMessage(adminMessage, error.message || authErrorMessage(error.code));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function subscribeAdminQuiz() {
+  unsubscribers.push(onValue(ref(db, "quiz/answers"), (snapshot) => {
+    adminQuizData.answers = snapshot.val() ?? {};
+    renderAdminQuestions();
+  }, () => {}));
+}
+
+function renderAdminQuestions() {
+  if (!currentUser || !isTeacher(currentProfile, currentUser)) return;
+  const list = $("#admin-question-list");
+  const openDetails = new Set([...list.querySelectorAll("details[open][data-qid]")].map((el) => el.dataset.qid));
+  list.innerHTML = quizQuestions.length
+    ? [...quizQuestions].reverse().map((question) => renderAdminQuestion(question, openDetails.has(question.id))).join("")
+    : `<p class="empty-text">아직 올린 문제가 없어요.</p>`;
+}
+
+function renderAdminQuestion(question, expanded) {
+  const qid = question.id;
+  const id = escapeAttribute(qid);
+  const answer = adminQuizData.answers[qid]?.display ?? "-";
+  const order = correctOrder(quizCorrect[qid], isHiddenUid);
+  const awards = adminQuizData.awards[qid] ?? {};
+  const attempts = adminQuizData.attempts[qid] ?? {};
+  const wrong = Object.entries(attempts)
+    .filter(([uid]) => !quizCorrect[qid]?.[uid] && !isHiddenUid(uid))
+    .map(([, row]) => row)
+    .sort((a, b) => Number(a.at ?? 0) - Number(b.at ?? 0));
+  const state = question.open ? "받는 중" : question.closedAt ? "마감" : "숨김";
+  const stateClass = question.open ? "pill-time" : "pill-off";
+  const openButton = question.open
+    ? `<button class="inline-danger-button" type="button" data-qaction="close" data-qid="${id}">마감하기</button>`
+    : `<button class="inline-action-button" type="button" data-qaction="open" data-qid="${id}">${question.closedAt ? "다시 받기" : "공개하기"}</button>`;
+  const revealButton = question.revealed
+    ? `<button class="inline-action-button is-on" type="button" data-qaction="hide-answer" data-qid="${id}">정답 숨기기</button>`
+    : `<button class="inline-action-button" type="button" data-qaction="reveal" data-qid="${id}">정답 공개</button>`;
+  return `
+    <article class="admin-question${question.open ? "" : " is-off"}">
+      <div class="quiz-head">
+        <span class="pill">${question.number}번</span>
+        <span class="pill">${question.type === "choice" ? "객관식" : "주관식"}</span>
+        <span class="pill ${stateClass}">${state}</span>
+        <span class="rank-meta">1등 ${formatNumber(question.firstPoints ?? 0)}P · 기회 ${Number(question.maxTries ?? 1)}번</span>
+      </div>
+      <p class="rank-name">${escapeHtml(question.title || question.text?.slice(0, 40) || "문제")}${question.author ? ` <small>(출제 ${escapeHtml(question.author)})</small>` : ""}</p>
+      <p class="rank-meta">정답: <b>${escapeHtml(answer)}</b> · 맞힘 ${order.length}명 · 틀림 ${wrong.length}명</p>
+      <div class="admin-question-actions">${openButton}${revealButton}<button class="inline-danger-button" type="button" data-qaction="delete" data-qid="${id}">삭제</button></div>
+      <details data-qid="${id}"${expanded ? " open" : ""}>
+        <summary>맞힌 순서 · 낸 답 보기</summary>
+        <p class="quiz-text">${escapeHtml(question.text ?? "")}</p>
+        ${order.length ? `<ol class="admin-rank">${order.map((row) => {
+          const award = awards[row.uid];
+          return `<li><b>${row.rank}등</b> ${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${formatClock(row.at)} · ${award ? `+${formatNumber(award.points)}P${award.paid ? "" : " (지급 중)"}` : "포인트 받기 전"}</span></li>`;
+        }).join("")}</ol>` : `<p class="empty-text">아직 맞힌 학생이 없어요.</p>`}
+        ${wrong.length ? `<p class="card-label">틀렸거나 기회를 쓴 학생</p><ul class="admin-wrong">${wrong.map((row) => `<li>${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${Number(row.count ?? 0)}번 · 마지막 답 '${escapeHtml(row.raw ?? "-")}'</span></li>`).join("")}</ul>` : ""}
+      </details>
+    </article>`;
+}
+
+async function handleAdminQuestionClick(event) {
+  const button = event.target.closest("[data-qaction]");
+  if (!button || !isTeacher(currentProfile, currentUser)) return;
+  const qid = button.dataset.qid;
+  const question = questionById(qid);
+  if (!question) return;
+  const action = button.dataset.qaction;
+  try {
+    if (action === "open") {
+      await update(ref(db, `quiz/questions/${qid}`), { open: true, openedAt: serverTimestamp() });
+    } else if (action === "close") {
+      await update(ref(db, `quiz/questions/${qid}`), { open: false, closedAt: serverTimestamp() });
+    } else if (action === "reveal") {
+      const answer = adminQuizData.answers[qid]?.display;
+      if (!answer) return;
+      if (question.open && !confirm("아직 답을 받는 중이에요. 정답을 공개하면 마감하고 공개할게요.")) return;
+      await update(ref(db, `quiz/questions/${qid}`), { revealed: answer, open: false, ...(question.closedAt ? {} : { closedAt: serverTimestamp() }) });
+    } else if (action === "hide-answer") {
+      await update(ref(db, `quiz/questions/${qid}`), { revealed: null });
+    } else if (action === "delete") {
+      if (!confirm(`${question.number}번 문제를 지울까요? 맞힌 순서 기록도 지워져요. (이미 받은 포인트는 그대로예요)`)) return;
+      await update(ref(db), {
+        [`quiz/questions/${qid}`]: null,
+        [`quiz/answers/${qid}`]: null,
+        [`quiz/attempts/${qid}`]: null,
+        [`quiz/correct/${qid}`]: null,
+        [`quiz/awards/${qid}`]: null,
+      });
+      setMessage(adminMessage, "문제를 지웠어요.");
+    }
+  } catch (error) {
+    setMessage(adminMessage, authErrorMessage(error.code));
+  }
+}
+
+function formatClock(ms) {
+  if (!ms) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(Number(ms)));
 }
 
 // ── 출석 체크 (월~금, 로그인하면 자동) ──────────────────────
@@ -662,31 +1118,6 @@ async function checkIn(today) {
     }
   }
   showToast("출석은 됐지만 포인트 반영에 실패했어요. 선생님께 말씀해 주세요.");
-}
-
-function subscribeGameDaily() {
-  unsubscribers.push(onValue(ref(db,`users/${currentUser.uid}`),snapshot=>{
-    const p=snapshot.val()||{};
-    const mask=p.practiceEnd===academyEnd(academyDay(serverNow()))?p.practiceMask||0:0;
-    const used=[1,2,4,8,16].filter(bit=>mask&bit).length*10;
-    $('#daily-game-points').textContent=used;
-    $('#daily-game-fill').style.width=used*2+'%';
-  }));
-}
-
-// ── 두뇌 지수 ───────────────────────────────────────────────
-
-function subscribeBrain() {
-  unsubscribers.push(onValue(ref(db,`academy/history/${currentUser.uid}`),s=>{brainData=s.val()||{};renderBrain();}));
-  renderBrain();
-}
-
-// 홈의 두뇌 무게 카드: 두뇌교실과 같은 말랑그램 + 오각형 + 기준표.
-function renderBrain() {
-  const details = $("#brain-summary details");
-  const open = details?.open ?? false;
-  $("#brain-summary").innerHTML = brainSummary(brainData || {});
-  if (open) $("#brain-summary details").open = true;
 }
 
 function subscribePointsLeaderboard() {
@@ -961,6 +1392,7 @@ function subscribeAdminTools() {
   subscribeAdminProducts();
   subscribeAdminPurchases();
   subscribeAdminAttendance();
+  subscribeAdminQuiz();
 }
 
 function subscribeAdminStudents() {
@@ -1402,6 +1834,7 @@ function normalizeLoginEmail(value) {
   const login = String(value ?? "").trim();
   const lower = login.toLowerCase();
   if (lower === ADMIN_LOGIN || lower === "admin" || lower === ADMIN_AUTH_EMAIL) return ADMIN_AUTH_EMAIL;
+  if (/^\d{5,12}$/.test(login)) return `${login}@${SCHOOL_EMAIL_DOMAIN}`;
   return login;
 }
 
@@ -1472,8 +1905,12 @@ function clearSubscriptions() {
   unsubscribers = [];
   rankUnsubscribe?.();
   rankUnsubscribe = null;
-  brainMount?.();
-  brainMount = null;
+  Object.values(quizUnsubs).forEach((unsubscribe) => unsubscribe());
+  quizUnsubs = {};
+  quizQuestions = [];
+  for (const store of [quizCorrect, quizMine, quizAwards]) Object.keys(store).forEach((key) => delete store[key]);
+  quizAwarding.clear();
+  adminQuizData = { answers: {}, attempts: {}, awards: {} };
 }
 
 function setMessage(element, message) {

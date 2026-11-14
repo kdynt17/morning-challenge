@@ -4,9 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "test:academy": "node tests/academy-emulator.mjs",
-    "test:ui": "node tests/academy-ui.mjs",
-    "check": "node --check app.js && node --check academy/brain.js && node --check academy/free-client.js && node --check academy/sound.js"
+    "test:rules": "npx -y firebase-tools@13 emulators:exec --only database --project demo-morning-quest \"node tests/quiz-rules.mjs\"",
+    "check": "node --check app.js && node --check quiz.mjs && node --check developer/developer.js && node --check tools/reset-password.mjs"
   },
   "devDependencies": { "firebase-admin": "^13.0.0" }
 }

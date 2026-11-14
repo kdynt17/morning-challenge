@@ -39,10 +39,10 @@ Firebase Console → Realtime Database → Data 탭에서 만들 수 있습니�
 |---|---|
 | `attendance/{uid}` | 마지막 출석일(한국 날짜 번호), 연속·누적 출석 |
 | `attendanceDays/{날짜 번호}/{uid}` | 그날 출석한 학생 (선생님 화면) |
-| `gameDaily/{uid}` | 오늘 받은 게임 포인트 (하루 30P 상한) |
-| `msRecords/{YYYY-MM}/{난이도}/{uid}` | 이번 달 최고 기록 (순위표) |
-| `msBest/{uid}/{난이도}` | 역대 최고 기록 |
-| `gameStats/{uid}/{난이도}` | 플레이·성공 횟수 |
-| `monthlyRewards/{YYYY-MM}` | 월말 보상 지급 기록 (중복 지급 방지) |
-| `records/{YYYY-MM}/{calc·stroop·memory}/{uid}` | 두뇌 게임 이번 달 최고 기록 |
-| `brain/{uid}` | 영역별 최근 10판 점수, XP, 두뇌 지수(BQ) |
+| `quiz/questions/{문제 ID}` | 문제(제목·출제자·내용·사진·유형·보기·1등 포인트·기회·공개 여부) |
+| `quiz/answers/{문제 ID}` | 정답 키와 보여 줄 정답 (선생님만 읽기) |
+| `quiz/attempts/{문제 ID}/{uid}` | 학생이 낸 횟수와 마지막 답 |
+| `quiz/correct/{문제 ID}/{uid}` | 맞힌 시각(서버 시각) — 맞힌 순서 |
+| `quiz/awards/{문제 ID}/{uid}` | 등수·받은 포인트·지급 여부 |
+| `settings/gamesLocked` | 문제 풀이 잠금 |
+| `academy/…`, `records/…` 등 | 예전 게임 기록(읽기 전용) |
