@@ -1,4 +1,4 @@
-import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-pwlogin";
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-modern";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -319,7 +319,7 @@ function renderGoogleLink() {
   if (!currentUser) return;
   const teacher = isTeacher(currentProfile, currentUser);
   const googleEmail = googleEmailOf(currentUser);
-  $("#profile-login").textContent = teacher ? "선생님 아이디" : googleEmail ? `학교 구글 (${googleEmail})` : "아이디·비밀번호";
+  $("#profile-login").textContent = teacher ? "선생님 아이디" : googleEmail ? "학교 구글 계정" : "아이디·비밀번호";
 }
 
 async function ensureProfile(user) {
@@ -391,7 +391,7 @@ function renderProfile(user, profile) {
   $("#profile-name").textContent = name;
   $("#profile-email").textContent = profile?.email ?? user.email;
   $("#profile-role").textContent = teacher ? "선생님" : "학생";
-  profileMessage.textContent = teacher ? "선생님 계정은 포인트가 저장되지 않습니다." : `${name} 님, 오늘 문제를 확인해보세요.`;
+  profileMessage.textContent = teacher ? "선생님 계정이에요. 오늘 문제와 정답자는 관리에서 볼 수 있어요." : `${name} 님, ${greetingByHour()}`;
   adminNavButton.hidden = !teacher;
   renderGoogleLink();
   document.body.classList.toggle("is-teacher", teacher);
@@ -1781,9 +1781,9 @@ function formatKoreanDate(ms) {
 
 function greetingByHour() {
   const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "numeric", hourCycle: "h23" }).format(new Date(serverNow())));
-  if (hour < 11) return "좋은 아침!";
-  if (hour < 17) return "오늘도 화이팅!";
-  return "오늘 하루 수고했어요!";
+  if (hour < 11) return "좋은 아침이에요.";
+  if (hour < 17) return "오늘 문제는 풀었어요?";
+  return "오늘도 수고했어요.";
 }
 
 
