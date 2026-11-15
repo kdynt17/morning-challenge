@@ -14,6 +14,10 @@
   --line: #e2e0d7;
   --line-strong: #cfccc1;
 
+  --primary: #17181a;
+  --primary-hover: #2b2d31;
+  --on-primary: #fbfbf7;
+  --primary-soft: #efeee8;
   --accent: #c8f25a;
   --accent-soft: #eefbd0;
   --accent-ink: #17181a;
@@ -231,12 +235,12 @@ input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; accent-color:
 }
 
 .primary-button {
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--on-ink);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
 }
 
-.primary-button:hover:not(:disabled) { background: var(--ink-hover); }
+.primary-button:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
 
 .secondary-button {
   border: 1px solid var(--line-strong);
@@ -545,7 +549,7 @@ body.is-teacher .header-points { display: none; }
 .pill.is-done { background: var(--ok-bg); color: var(--ok); }
 .pill.is-closed,
 .pill-off { background: var(--danger-bg); color: var(--danger); }
-.pill-time { background: var(--accent-soft); color: var(--ink); }
+.pill-time { background: var(--primary-soft); color: var(--primary-hover); }
 .pill-hot { background: var(--warn-bg); color: var(--warn); }
 
 /* ── 순위 줄 ── */
@@ -589,7 +593,7 @@ body.is-teacher .header-points { display: none; }
 .rank-2 .rank-number { background: var(--silver); color: var(--ink); }
 .rank-3 .rank-number { background: var(--bronze); color: var(--ink); }
 
-.rank-mine { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.rank-mine { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
 .profile-card .rank-mine { background: var(--accent-soft); box-shadow: none; }
 
 .rank-body { min-width: 0; }
