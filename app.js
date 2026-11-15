@@ -1,4 +1,4 @@
-import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, DEFAULT_TRIES, CHOICE_MARKS, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-google";
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-classic";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -38,7 +38,11 @@ const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 
 // ── 포인트 설계 ─────────────────────────────────────────────
-// 출석10P(월~금, 로그인하면 자동) + 문제 풀이 맞힌 순서 보상(1등 100P, 한 등수마다 -5P, 최소 1등의 20%).
+// 하루 한 문제: 먼저 맞힌 순서대로 1등 150점, 한 등수마다 -5점. 틀리면 10점 감점 후 다시 제출(최대 10번).
+// 출석 10점(월~금, 로그인하면 자동)은 그대로 둔다.
+const FIRST_POINTS = 150;
+const WRONG_ANSWER_PENALTY = 10;
+const MAX_TRIES = 10;
 const ATTENDANCE_POINTS = 10;
 const STREAK_BONUS_EVERY = 7;
 const STREAK_BONUS_POINTS = 30;
@@ -61,7 +65,6 @@ const authMessage = $("#auth-message");
 const pageTitle = $("#page-title");
 const todayLabel = $("#today-label");
 const leaderboardList = $("#leaderboard-list");
-const rankCaption = $("#rank-caption");
 const storeList = $("#store-list");
 const profileMessage = $("#profile-message");
 const purchaseHistoryList = $("#purchase-history-list");
@@ -86,8 +89,7 @@ const purchaseMessage = $("#purchase-message");
 const attendanceButton = $("#attendance-button");
 
 const pageNames = {
-  home: "홈",
-  quiz: "오늘의 문제",
+  home: "오늘의 문제",
   leaderboard: "순위",
   store: "포인트 상점",
   profile: "내 정보",
@@ -143,18 +145,11 @@ if (setupRequired) {
     loginForm.hidden = !loginForm.hidden;
     if (!loginForm.hidden) $("#login-email").focus();
   });
-  $("#question-form").addEventListener("submit", handleQuestionSave);
-  $("#question-form").addEventListener("change", (event) => {
-    if (event.target.name === "q-type") renderQuestionTypeFields();
-  });
-  $("#quiz-list").addEventListener("submit", handleQuizSubmit);
-  $("#quiz-list").addEventListener("change", (event) => {
-    // 객관식 보기를 고르면 제출 버튼을 켠다.
-    const form = event.target.closest("form[data-qid]");
-    if (form) form.querySelector("button[type=submit]").disabled = !form.querySelector("input[name=choice]:checked");
-  });
+  $("#answer-form").addEventListener("submit", handleAnswerSubmit);
+  $("#challenge-form").addEventListener("submit", handleChallengeSave);
+  $("#delete-challenge-button").addEventListener("click", handleChallengeDelete);
+  $("#admin-challenge-date").value = todayKey();
   $("#admin-question-list").addEventListener("click", handleAdminQuestionClick);
-  renderChoiceRows();
   $("#logout-button").addEventListener("click", () => signOut(auth));
   $("#pending-logout-button").addEventListener("click", () => signOut(auth));
   productForm.addEventListener("submit", handleProductSave);
@@ -228,8 +223,8 @@ if (setupRequired) {
     }
     // ?page=store 처럼 들어오면 그 화면을 연다(예전 두뇌교실 주소 ?page=games 는 문제 화면으로).
     const params = new URLSearchParams(location.search);
-    const requestedPage = params.get("page") === "games" || params.has("game") ? "quiz" : params.get("page");
-    enterApp(["quiz", "leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
+    const requestedPage = params.get("page");
+    enterApp(["leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
   });
 }
 
@@ -431,13 +426,12 @@ function renderProfile(user, profile) {
   const teacher = isTeacher(profile, user);
   const points = Number(profile?.points ?? 0);
 
-  $("#header-points-value").textContent = formatNumber(points);
+  $("#my-points").textContent = formatNumber(points);
   $("#profile-points").textContent = formatNumber(points);
   $("#profile-name").textContent = name;
   $("#profile-email").textContent = profile?.email ?? user.email;
   $("#profile-role").textContent = teacher ? "선생님" : "학생";
-  $("#greeting").textContent = `${name} 님, ${greetingByHour()}`;
-  profileMessage.textContent = teacher ? "선생님 계정은 포인트와 문제 풀이 기록이 저장되지 않아요." : "";
+  profileMessage.textContent = teacher ? "선생님 계정은 포인트가 저장되지 않습니다." : `${name} 님, 오늘 문제를 확인해보세요.`;
   adminNavButton.hidden = !teacher;
   renderGoogleLink();
   document.body.classList.toggle("is-teacher", teacher);
@@ -525,7 +519,7 @@ function subscribeGameLock() {
     firstLoad = false;
     gamesLocked = locked;
     renderGameLockAdmin();
-    renderQuiz();
+    renderChallenge();
     if (!changed || isTeacher(currentProfile, currentUser)) return;
     showToast(locked ? "선생님이 문제 풀이를 잠갔어요." : "문제 풀이 잠금이 풀렸어요.");
   }, () => {});
@@ -554,25 +548,40 @@ async function handleGameLockToggle() {
 // 채점은 DB 규칙이 한다: 정답(quiz/answers)은 선생님만 읽을 수 있고,
 // 학생은 답을 quiz/attempts에 적은 뒤 quiz/correct에 '맞혔다'를 써 본다. 정답이 아니면 규칙이 거절한다.
 
-function subscribeQuiz() {
-  const questionsQuery = query(ref(db, "quiz/questions"), orderByChild("createdAt"), limitToLast(80));
-  unsubscribers.push(onValue(questionsQuery, (snapshot) => {
-    const list = [];
-    snapshot.forEach((child) => {
-      list.push({ id: child.key, ...child.val() });
-    });
-    list.sort((a, b) => Number(a.createdAt ?? 0) - Number(b.createdAt ?? 0));
-    list.forEach((question, index) => { question.number = index + 1; });
-    quizQuestions = list;
-    syncQuizSubscriptions();
-    renderQuiz();
-    renderAdminQuestions();
-  }, () => {
-    $("#quiz-list").innerHTML = `<p class="empty-text">문제를 불러오지 못했어요. 선생님께 말해 주세요.</p>`;
-  }));
+// 한국 날짜 "YYYY-MM-DD" — 하루 한 문제의 열쇠
+function todayKey() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(serverNow()));
 }
 
-// 학생에게 보이는 문제: 받는 중이거나 마감된 문제(한 번도 공개 안 한 문제는 숨김)
+function subscribeQuiz() {
+  const teacher = isTeacher(currentProfile, currentUser);
+  const today = todayKey();
+  const apply = (list) => {
+    list.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    quizQuestions = list;
+    syncQuizSubscriptions();
+    renderChallenge();
+    renderAdminQuestions();
+  };
+  if (teacher) {
+    // 선생님은 지난 문제 기록도 본다.
+    const recent = query(ref(db, "quiz/questions"), orderByChild("createdAt"), limitToLast(60));
+    unsubscribers.push(onValue(recent, (snapshot) => {
+      const list = [];
+      snapshot.forEach((child) => { list.push({ id: child.key, ...child.val() }); });
+      apply(list);
+    }, () => {}));
+  } else {
+    // 학생은 오늘 문제 하나만 본다.
+    unsubscribers.push(onValue(ref(db, `quiz/questions/${today}`), (snapshot) => {
+      apply(snapshot.exists() ? [{ id: today, ...snapshot.val() }] : []);
+    }, () => {
+      setMessage($("#answer-message"), "문제를 불러오지 못했어요. 선생님께 말해 주세요.");
+    }));
+  }
+}
+
+// 학생에게 보이는 문제: 받는 중이거나 마감된 문제(숨김 문제는 안 보임)
 function isVisibleQuestion(question) {
   return question.open === true || Boolean(question.closedAt);
 }
@@ -592,7 +601,7 @@ function syncQuizSubscriptions() {
     watchQuiz(`correct:${qid}`, `quiz/correct/${qid}`, (value) => {
       quizCorrect[qid] = value ?? {};
       maybeResumeAward(qid);
-      renderQuiz();
+      renderChallenge();
       renderAdminQuestions();
     });
     if (teacher) {
@@ -601,11 +610,11 @@ function syncQuizSubscriptions() {
       watchQuiz(`awards:${qid}`, `quiz/awards/${qid}`, (value) => { adminQuizData.awards[qid] = value ?? {}; renderAdminQuestions(); });
     } else {
       wanted.add(`mine:${qid}`).add(`award:${qid}`);
-      watchQuiz(`mine:${qid}`, `quiz/attempts/${qid}/${currentUser.uid}`, (value) => { quizMine[qid] = value; renderQuiz(); });
+      watchQuiz(`mine:${qid}`, `quiz/attempts/${qid}/${currentUser.uid}`, (value) => { quizMine[qid] = value; renderChallenge(); });
       watchQuiz(`award:${qid}`, `quiz/awards/${qid}/${currentUser.uid}`, (value) => {
         quizAwards[qid] = value;
         maybeResumeAward(qid);
-        renderQuiz();
+        renderChallenge();
       });
     }
   }
@@ -624,175 +633,147 @@ function myRankIn(qid) {
   return correctOrder(quizCorrect[qid], isHiddenUid).find((row) => row.uid === currentUser?.uid)?.rank ?? null;
 }
 
-function renderQuiz() {
+// 홈: 오늘의 문제 카드 (예전 화면 그대로)
+function renderChallenge() {
   if (!currentUser) return;
   const teacher = isTeacher(currentProfile, currentUser);
-  const visible = quizQuestions.filter(isVisibleQuestion).reverse();
-  $("#quiz-lock-banner").hidden = !gamesLocked;
-  const list = $("#quiz-list");
-  // 학생이 답을 적는 중이면 그 칸을 다시 그리지 않도록 입력값과 선택을 기억해 둔다.
-  const drafts = {};
-  list.querySelectorAll("form[data-qid]").forEach((form) => {
-    drafts[form.dataset.qid] = {
-      text: form.querySelector("input[name=answer]")?.value ?? "",
-      choice: form.querySelector("input[name=choice]:checked")?.value ?? "",
-      focused: form.contains(document.activeElement),
-    };
-  });
-  list.innerHTML = visible.length
-    ? visible.map((question) => renderQuizCard(question, teacher)).join("")
-    : `<p class="empty-text">아직 올라온 문제가 없어요. 선생님이 문제를 올리면 여기에 나와요.</p>`;
-  for (const [qid, draft] of Object.entries(drafts)) {
-    const form = list.querySelector(`form[data-qid="${CSS.escape(qid)}"]`);
-    if (!form) continue;
-    const input = form.querySelector("input[name=answer]");
-    if (input) {
-      input.value = draft.text;
-      if (draft.focused) input.focus({ preventScroll: true });
-    }
-    const radio = draft.choice && form.querySelector(`input[name=choice][value="${draft.choice}"]`);
-    if (radio) {
-      radio.checked = true;
-      form.querySelector("button[type=submit]").disabled = false;
-    }
-  }
-  renderQuizHome();
-}
+  const today = todayKey();
+  const question = questionById(today);
+  const visible = question && isVisibleQuestion(question);
+  const status = $("#challenge-status");
+  const submit = $("#answer-form button");
+  const message = $("#answer-message");
+  $("#challenge-date").textContent = today;
+  status.className = "pill";
 
-function renderQuizCard(question, teacher) {
-  const qid = question.id;
-  const order = correctOrder(quizCorrect[qid], isHiddenUid);
-  const myRank = teacher ? null : myRankIn(qid);
-  const solved = Boolean(quizCorrect[qid]?.[currentUser.uid]);
-  const mine = quizMine[qid];
-  const used = Number(mine?.count ?? 0);
-  const maxTries = Number(question.maxTries ?? 1);
-  const left = Math.max(0, maxTries - used);
-  const award = quizAwards[qid];
-  const choices = Array.isArray(question.choices) ? question.choices : Object.values(question.choices ?? {});
-
-  const statusPill = question.open
-    ? `<span class="pill pill-time">답 받는 중</span>`
-    : `<span class="pill pill-off">마감</span>`;
-  const head = `
-    <div class="quiz-head">
-      <span class="pill">${question.number}번</span>
-      <span class="pill">${question.type === "choice" ? "객관식" : "주관식"}</span>
-      ${statusPill}
-      <span class="product-price">1등 ${formatNumber(question.firstPoints ?? 0)}P</span>
-    </div>
-    ${question.title ? `<h2 class="quiz-title">${escapeHtml(question.title)}</h2>` : ""}
-    ${question.author ? `<p class="quiz-author">출제: ${escapeHtml(question.author)}</p>` : ""}
-    <p class="quiz-text">${escapeHtml(question.text ?? "")}</p>
-    ${question.imageUrl ? `<img class="content-image quiz-image" src="${escapeAttribute(question.imageUrl)}" alt="문제 그림" loading="lazy" />` : ""}
-  `;
-
-  let body = "";
-  if (teacher) {
-    body = question.type === "choice" ? renderChoiceList(choices) : "";
-  } else if (solved) {
-    const points = award?.points ?? pointsForRank(myRank ?? order.length, question.firstPoints);
-    body = `${question.type === "choice" ? renderChoiceList(choices) : ""}
-      <p class="quiz-result is-correct">정답! ${myRank ?? "-"}등으로 맞혔어요 · ${award?.paid ? `+${formatNumber(points)}P 받음` : `+${formatNumber(points)}P 받는 중…`}</p>`;
-  } else if (!question.open || left === 0) {
-    body = `${question.type === "choice" ? renderChoiceList(choices) : ""}
-      <p class="quiz-result ${used ? "is-wrong" : ""}">${used ? `아쉽게 틀렸어요. 내 답: ${escapeHtml(mine?.raw ?? "-")}` : "마감된 문제예요."}</p>`;
-  } else {
-    const locked = gamesLocked;
-    const inputs = question.type === "choice"
-      ? `<div class="quiz-choices">${choices.map((choice, index) => `
-          <label class="quiz-choice"><input type="radio" name="choice" value="${index + 1}" ${locked ? "disabled" : ""} /><span class="quiz-mark">${CHOICE_MARKS[index]}</span><span>${escapeHtml(choice)}</span></label>`).join("")}</div>`
-      : `<input class="quiz-answer-input" name="answer" type="text" maxlength="${MAX_RAW_ANSWER}" autocomplete="off" placeholder="답을 적으세요" ${locked ? "disabled" : ""} required />`;
-    const wrongNote = used ? `<p class="quiz-result is-wrong">틀렸어요 (내 답: ${escapeHtml(mine?.raw ?? "-")}). 기회가 ${left}번 남았어요.</p>` : "";
-    body = `
-      <form class="quiz-form" data-qid="${escapeAttribute(qid)}">
-        ${inputs}
-        ${wrongNote}
-        <button class="primary-button" type="submit" ${locked || question.type === "choice" ? "disabled" : ""}>${locked ? "잠겨 있어요" : `답 내기 · 기회 ${left}번`}</button>
-      </form>`;
-  }
-
-  const revealed = question.revealed ? `<p class="quiz-revealed">정답: <b>${escapeHtml(question.revealed)}</b></p>` : "";
-  const rankItems = order.map((row) => `
-    <li class="${row.uid === currentUser.uid ? "rank-mine" : ""}"><span class="quiz-rank-no">${row.rank}등</span><span>${escapeHtml(row.name ?? "학생")}</span><span class="rank-meta">${formatClock(row.at)}</span></li>`).join("");
-  const ranking = `
-    <details class="quiz-ranking"${order.length && order.length <= 10 ? " open" : ""}>
-      <summary>맞힌 순서 ${order.length}명</summary>
-      ${order.length ? `<ol>${rankItems}</ol>` : `<p class="empty-text">아직 맞힌 사람이 없어요. 1등을 노려 보세요!</p>`}
-    </details>`;
-
-  return `<article class="card quiz-card${question.open ? "" : " is-closed"}${solved ? " is-solved" : ""}">${head}${body}${revealed}${ranking}</article>`;
-}
-
-function renderChoiceList(choices) {
-  return `<ol class="quiz-choice-list">${choices.map((choice, index) => `<li><span class="quiz-mark">${CHOICE_MARKS[index]}</span>${escapeHtml(choice)}</li>`).join("")}</ol>`;
-}
-
-function renderQuizHome() {
-  const teacher = isTeacher(currentProfile, currentUser);
-  const open = quizQuestions.filter((question) => question.open === true);
-  const unsolved = open.filter((question) => !quizCorrect[question.id]?.[currentUser.uid] && Number(quizMine[question.id]?.count ?? 0) < Number(question.maxTries ?? 1));
-  $("#quiz-home-title").textContent = !open.length
-    ? "지금 열린 문제가 없어요"
-    : teacher
-      ? `문제 ${open.length}개가 열려 있어요`
-      : unsolved.length
-        ? `아직 안 푼 문제가 ${unsolved.length}개 있어요!`
-        : "열린 문제를 다 풀었어요";
-  const solvedIds = Object.keys(quizCorrect).filter((qid) => quizCorrect[qid]?.[currentUser.uid]);
-  $("#quiz-solved-count").textContent = solvedIds.length;
-  $("#quiz-solved-caption").textContent = `1등 ${solvedIds.filter((qid) => myRankIn(qid) === 1).length}번`;
-}
-
-async function handleQuizSubmit(event) {
-  event.preventDefault();
-  const form = event.target.closest("form[data-qid]");
-  if (!form || !currentUser || isTeacher(currentProfile, currentUser)) return;
-  const question = questionById(form.dataset.qid);
-  if (!question) return;
-  if (!question.open) return showToast("마감된 문제예요.");
-  if (gamesLocked) return showToast("지금은 선생님이 문제 풀이를 잠가 두었어요.");
-
-  let raw;
-  let key;
-  if (question.type === "choice") {
-    const picked = form.querySelector("input[name=choice]:checked");
-    if (!picked) return showToast("보기를 하나 골라 주세요.");
-    const choices = Array.isArray(question.choices) ? question.choices : Object.values(question.choices ?? {});
-    raw = `${CHOICE_MARKS[picked.value - 1]} ${choices[picked.value - 1] ?? ""}`.trim();
-    key = answerKey("choice", picked.value);
-  } else {
-    raw = form.querySelector("input[name=answer]").value.trim().slice(0, MAX_RAW_ANSWER);
-    key = answerKey("text", raw);
-  }
-  if (!key) return showToast("답을 적어 주세요.");
-
-  const used = Number(quizMine[question.id]?.count ?? 0);
-  const left = Number(question.maxTries ?? 1) - used;
-  if (left <= 0) return showToast("기회를 다 썼어요.");
-  if (!confirm(`'${raw}' (으)로 낼까요?\n${left === 1 ? "마지막 기회예요!" : `기회가 ${left}번 남았어요.`}`)) return;
-
-  const button = form.querySelector("button[type=submit]");
-  button.disabled = true;
-  const qid = question.id;
-  const uid = currentUser.uid;
-  const name = currentProfile?.name ?? "";
-  try {
-    await set(ref(db, `quiz/attempts/${qid}/${uid}`), { name, count: used + 1, last: key, raw, at: serverTimestamp() });
-  } catch (error) {
-    button.disabled = false;
-    return showToast("답을 내지 못했어요. 마감됐거나 잠겼는지 확인해 주세요.");
-  }
-
-  // 맞았으면 규칙이 받아 주고, 틀렸으면 거절한다.
-  try {
-    await set(ref(db, `quiz/correct/${qid}/${uid}`), { name, at: serverTimestamp() });
-  } catch (error) {
-    const remain = left - 1;
-    showToast(remain > 0 ? `틀렸어요. 기회가 ${remain}번 남았어요.` : "아쉽게 틀렸어요. 기회를 다 썼어요.");
+  if (!visible) {
+    $("#challenge-title").textContent = "오늘의 문제가 아직 등록되지 않았습니다.";
+    $("#challenge-description").textContent = "선생님이 문제를 등록하면 자동으로 표시됩니다.";
+    renderImage($("#challenge-image"), "");
+    $("#challenge-revealed").hidden = true;
+    status.textContent = "아직 공개 전";
+    submit.disabled = true;
+    setMessage(message, "");
+    $("#today-rank-list").innerHTML = `<p class="empty-text">아직 정답자가 없습니다.</p>`;
     return;
   }
-  await awardQuiz(question);
+
+  $("#challenge-title").textContent = question.title || "오늘의 문제";
+  $("#challenge-description").textContent = question.text ?? "";
+  renderImage($("#challenge-image"), question.imageUrl);
+  $("#challenge-revealed").hidden = !question.revealed;
+  $("#challenge-revealed").textContent = question.revealed ? `정답: ${question.revealed}` : "";
+
+  const order = correctOrder(quizCorrect[today], isHiddenUid);
+  const solved = Boolean(quizCorrect[today]?.[currentUser.uid]);
+  const used = Number(quizMine[today]?.count ?? 0);
+  const left = Math.max(0, Number(question.maxTries ?? MAX_TRIES) - used);
+  const award = quizAwards[today];
+  const rank = myRankIn(today);
+
+  if (teacher) {
+    status.textContent = question.open ? "제출 가능" : "마감";
+    submit.disabled = true;
+    setMessage(message, "선생님 계정은 답을 제출하지 않아요. 관리 화면에서 정답자를 확인하세요.");
+  } else if (solved) {
+    status.textContent = "제출 완료";
+    status.classList.add("is-done");
+    submit.disabled = true;
+    const points = award?.points ?? pointsForRank(rank ?? order.length, question.firstPoints);
+    setMessage(message, `정답입니다! ${rank ?? "-"}번째 정답으로 ${formatNumber(points)}점${award?.paid ? "을 받았습니다." : "을 받는 중입니다."}`);
+  } else if (!question.open) {
+    status.textContent = "마감";
+    status.classList.add("is-closed");
+    submit.disabled = true;
+    setMessage(message, "오늘 문제는 마감되었습니다.");
+  } else if (gamesLocked) {
+    status.textContent = "잠김";
+    status.classList.add("is-closed");
+    submit.disabled = true;
+    setMessage(message, "지금은 선생님이 문제 풀이를 잠가 두었습니다.");
+  } else if (left === 0) {
+    status.textContent = "기회 끝";
+    status.classList.add("is-closed");
+    submit.disabled = true;
+    setMessage(message, `${used}번 모두 틀렸어요. 내일 문제에 다시 도전해요.`);
+  } else {
+    status.textContent = "제출 가능";
+    submit.disabled = submittingAnswer;
+  }
+
+  $("#today-rank-list").innerHTML = order.length
+    ? order.map((row, index) => renderRankItem({
+        index,
+        name: row.name,
+        meta: formatClock(row.at),
+        value: `${formatNumber(pointsForRank(row.rank, question.firstPoints))}점`,
+        mine: row.uid === currentUser.uid,
+      })).join("")
+    : `<p class="empty-text">아직 정답자가 없습니다. 1등을 노려 보세요!</p>`;
+}
+
+let submittingAnswer = false;
+
+async function handleAnswerSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
+  const today = todayKey();
+  const question = questionById(today);
+  const message = $("#answer-message");
+  if (!question || !question.open) return setMessage(message, "오늘 문제가 열려 있지 않습니다.");
+  if (gamesLocked) return setMessage(message, "지금은 선생님이 문제 풀이를 잠가 두었습니다.");
+  if (quizCorrect[today]?.[currentUser.uid]) return setMessage(message, "이미 정답을 제출했습니다. 포인트는 한 번만 지급됩니다.");
+
+  const input = $("#answer");
+  const raw = input.value.trim().slice(0, MAX_RAW_ANSWER);
+  const key = answerKey("text", raw);
+  if (!key) return;
+  const used = Number(quizMine[today]?.count ?? 0);
+  if (used >= Number(question.maxTries ?? MAX_TRIES)) return setMessage(message, "제출 기회를 모두 썼습니다.");
+
+  const uid = currentUser.uid;
+  const name = currentProfile?.name ?? "";
+  submittingAnswer = true;
+  $("#answer-form button").disabled = true;
+  setMessage(message, "채점하는 중입니다.");
+  try {
+    try {
+      await set(ref(db, `quiz/attempts/${today}/${uid}`), { name, count: used + 1, last: key, raw, at: serverTimestamp() });
+    } catch (error) {
+      setMessage(message, "제출하지 못했습니다. 마감됐거나 잠겼는지 확인해 주세요.");
+      return;
+    }
+    // 정답이면 DB 규칙이 받아 주고, 틀리면 거절한다.
+    let correct = true;
+    try {
+      await set(ref(db, `quiz/correct/${today}/${uid}`), { name, at: serverTimestamp() });
+    } catch (error) {
+      correct = false;
+    }
+    if (!correct) {
+      const remaining = await applyWrongAnswerPenalty();
+      const left = Number(question.maxTries ?? MAX_TRIES) - (used + 1);
+      setMessage(message, `틀렸어요. ${WRONG_ANSWER_PENALTY}점이 차감되어 현재 ${formatNumber(remaining)}점입니다. ${left > 0 ? `답을 고쳐서 다시 제출할 수 있습니다. (남은 기회 ${left}번)` : "기회를 모두 썼습니다."}`);
+      return;
+    }
+    input.value = "";
+    await awardQuiz(question);
+  } finally {
+    submittingAnswer = false;
+    renderChallenge();
+  }
+}
+
+// 틀리면 10점 감점(0점 아래로는 안 내려감)
+async function applyWrongAnswerPenalty() {
+  try {
+    const result = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (current) => Math.max(0, Number(current ?? 0) - WRONG_ANSWER_PENALTY));
+    const total = Number(result.snapshot.val() ?? 0);
+    await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: total });
+    return total;
+  } catch (error) {
+    return Number(currentProfile?.points ?? 0);
+  }
 }
 
 // 맞힌 순서대로 포인트를 받는다. 받기 전에 끊겼으면 다음에 열 때 이어서 받는다.
@@ -822,11 +803,11 @@ async function awardQuiz(question) {
     if (!award.paid) {
       if (award.points > 0) await addMyPoints(award.points);
       await update(awardRef, { paid: true });
-      showToast(`정답! ${award.rank}등 · +${formatNumber(award.points)}P`);
+      setMessage($("#answer-message"), `정답입니다! ${award.rank}번째 정답으로 ${formatNumber(award.points)}점을 받았습니다.`);
     }
   } catch (error) {
     console.error(error);
-    showToast("정답 포인트를 아직 못 받았어요. 앱을 다시 열면 이어서 받아요.");
+    setMessage($("#answer-message"), "정답 처리는 됐지만 포인트를 아직 못 받았어요. 앱을 다시 열면 이어서 받아요.");
   } finally {
     quizAwarding.delete(qid);
   }
@@ -834,86 +815,69 @@ async function awardQuiz(question) {
 
 // ── 선생님: 문제 올리기·관리 ────────────────────────────────
 
-function renderChoiceRows() {
-  $("#q-choice-rows").innerHTML = CHOICE_MARKS.map((mark, index) => `
-    <div class="q-choice-row">
-      <label class="q-correct-pick" title="이 보기를 정답으로"><input type="radio" name="q-correct" value="${index}" ${index === 0 ? "checked" : ""} /><span>${mark}</span></label>
-      <input class="q-choice-input" type="text" maxlength="200" placeholder="보기 ${index + 1}" aria-label="보기 ${index + 1}" />
-    </div>`).join("");
-  renderQuestionTypeFields();
-}
-
-function selectedQuestionType() {
-  return $("#question-form input[name=q-type]:checked")?.value ?? "choice";
-}
-
-function renderQuestionTypeFields() {
-  const type = selectedQuestionType();
-  $("#q-choice-box").hidden = type !== "choice";
-  $("#q-text-answer-box").hidden = type !== "text";
-  $("#q-max-tries").value = DEFAULT_TRIES[type];
-}
-
-async function handleQuestionSave(event) {
+async function handleChallengeSave(event) {
   event.preventDefault();
   if (!isTeacher(currentProfile, currentUser)) return;
   const button = event.target.querySelector("button[type=submit]");
   try {
-    const type = selectedQuestionType();
-    const text = $("#q-text").value.trim();
-    if (!text) throw new Error("문제를 적어 주세요.");
-    let choices = null;
-    let keys;
-    let display;
-    if (type === "choice") {
-      const rows = [...document.querySelectorAll("#q-choice-rows .q-choice-row")].map((row) => ({
-        text: row.querySelector(".q-choice-input").value.trim(),
-        correct: row.querySelector("input[name=q-correct]").checked,
-      })).filter((row) => row.text);
-      if (rows.length < 2) throw new Error("보기를 2개 이상 적어 주세요.");
-      const correctIndex = rows.findIndex((row) => row.correct);
-      if (correctIndex < 0) throw new Error("정답 보기의 동그라미를 눌러 정답을 골라 주세요(빈 보기는 정답이 될 수 없어요).");
-      choices = rows.map((row) => row.text);
-      keys = [answerKey("choice", correctIndex + 1)];
-      display = `${CHOICE_MARKS[correctIndex]} ${choices[correctIndex]}`;
-    } else {
-      const lines = $("#q-text-answer").value;
-      keys = textAnswerKeys(lines);
-      if (!keys.length) throw new Error("주관식 정답을 적어 주세요.");
-      display = lines.split("\n").map((line) => line.trim()).filter(Boolean).join(" / ");
-    }
-    const firstPoints = Math.max(0, Math.min(1000, Math.round(Number($("#q-first-points").value) || 0)));
-    const maxTries = Math.max(1, Math.min(10, Math.round(Number($("#q-max-tries").value) || 1)));
-    const open = $("#q-open").checked;
+    const dateKey = $("#admin-challenge-date").value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("날짜를 골라 주세요.");
+    const title = $("#admin-challenge-title").value.trim();
+    const text = $("#admin-challenge-description").value.trim();
+    const answer = $("#admin-answer").value.trim();
+    const keys = textAnswerKeys(answer);
+    if (!text) throw new Error("문제 내용을 적어 주세요.");
+    if (!keys.length) throw new Error("정답을 적어 주세요.");
+    const existing = (await get(ref(db, `quiz/questions/${dateKey}`))).exists();
+    if (existing && !confirm(`${dateKey}에 이미 문제가 있어요. 새 문제로 바꾸면 그날 제출·정답 기록이 지워져요(이미 받은 포인트는 그대로). 바꿀까요?`)) return;
     button.disabled = true;
-    setMessage(adminMessage, "문제를 저장하는 중이에요.");
-    const imageUrl = await getImageValue("#q-image-url", "#q-image-file");
-    const qid = push(ref(db, "quiz/questions")).key;
+    setMessage(adminMessage, "문제를 저장하는 중입니다.");
+    const imageUrl = await getImageValue("#admin-challenge-image-url", "#admin-challenge-image-file");
     await update(ref(db), {
-      [`quiz/questions/${qid}`]: {
-        title: $("#q-title").value.trim(),
-        author: $("#q-author").value.trim(),
+      [`quiz/questions/${dateKey}`]: {
+        title,
         text,
         imageUrl,
-        type,
-        choices,
-        firstPoints,
-        maxTries,
-        open,
+        type: "text",
+        firstPoints: FIRST_POINTS,
+        maxTries: MAX_TRIES,
+        open: true,
         createdAt: serverTimestamp(),
         createdBy: currentUser.uid,
       },
-      [`quiz/answers/${qid}`]: { keys: Object.fromEntries(keys.map((key) => [key, true])), display },
+      [`quiz/answers/${dateKey}`]: { keys: Object.fromEntries(keys.map((key) => [key, true])), display: answer },
+      ...(existing ? { [`quiz/attempts/${dateKey}`]: null, [`quiz/correct/${dateKey}`]: null, [`quiz/awards/${dateKey}`]: null } : {}),
     });
     event.target.reset();
-    renderChoiceRows();
-    setMessage(adminMessage, open ? "문제를 올렸어요. 학생 화면에 바로 보여요." : "문제를 저장했어요(아직 숨김). 아래에서 '공개하기'를 누르면 보여요.");
-    showToast("문제를 저장했어요.");
+    $("#admin-challenge-date").value = todayKey();
+    setMessage(adminMessage, `${dateKey} 문제를 저장했습니다.`);
   } catch (error) {
     setMessage(adminMessage, error.message || authErrorMessage(error.code));
   } finally {
     button.disabled = false;
   }
+}
+
+async function handleChallengeDelete() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const dateKey = $("#admin-challenge-date").value || todayKey();
+  if (!confirm(`${dateKey} 문제를 삭제할까요? 학생 화면에서도 사라집니다. (이미 받은 포인트는 그대로)`)) return;
+  try {
+    await deleteQuestion(dateKey);
+    setMessage(adminMessage, "문제를 삭제했습니다.");
+  } catch (error) {
+    setMessage(adminMessage, error.message || authErrorMessage(error.code));
+  }
+}
+
+function deleteQuestion(qid) {
+  return update(ref(db), {
+    [`quiz/questions/${qid}`]: null,
+    [`quiz/answers/${qid}`]: null,
+    [`quiz/attempts/${qid}`]: null,
+    [`quiz/correct/${qid}`]: null,
+    [`quiz/awards/${qid}`]: null,
+  });
 }
 
 function subscribeAdminQuiz() {
@@ -954,12 +918,10 @@ function renderAdminQuestion(question, expanded) {
   return `
     <article class="admin-question${question.open ? "" : " is-off"}">
       <div class="quiz-head">
-        <span class="pill">${question.number}번</span>
-        <span class="pill">${question.type === "choice" ? "객관식" : "주관식"}</span>
+        <span class="pill">${escapeHtml(qid)}</span>
         <span class="pill ${stateClass}">${state}</span>
-        <span class="rank-meta">1등 ${formatNumber(question.firstPoints ?? 0)}P · 기회 ${Number(question.maxTries ?? 1)}번</span>
       </div>
-      <p class="rank-name">${escapeHtml(question.title || question.text?.slice(0, 40) || "문제")}${question.author ? ` <small>(출제 ${escapeHtml(question.author)})</small>` : ""}</p>
+      <p class="rank-name">${escapeHtml(question.title || question.text?.slice(0, 40) || "문제")}</p>
       <p class="rank-meta">정답: <b>${escapeHtml(answer)}</b> · 맞힘 ${order.length}명 · 틀림 ${wrong.length}명</p>
       <div class="admin-question-actions">${openButton}${revealButton}<button class="inline-danger-button" type="button" data-qaction="delete" data-qid="${id}">삭제</button></div>
       <details data-qid="${id}"${expanded ? " open" : ""}>
@@ -967,9 +929,9 @@ function renderAdminQuestion(question, expanded) {
         <p class="quiz-text">${escapeHtml(question.text ?? "")}</p>
         ${order.length ? `<ol class="admin-rank">${order.map((row) => {
           const award = awards[row.uid];
-          return `<li><b>${row.rank}등</b> ${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${formatClock(row.at)} · ${award ? `+${formatNumber(award.points)}P${award.paid ? "" : " (지급 중)"}` : "포인트 받기 전"}</span></li>`;
+          return `<li><b>${row.rank}등</b> ${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${formatClock(row.at)} · ${award ? `+${formatNumber(award.points)}점${award.paid ? "" : " (지급 중)"}` : "포인트 받기 전"}</span></li>`;
         }).join("")}</ol>` : `<p class="empty-text">아직 맞힌 학생이 없어요.</p>`}
-        ${wrong.length ? `<p class="card-label">틀렸거나 기회를 쓴 학생</p><ul class="admin-wrong">${wrong.map((row) => `<li>${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${Number(row.count ?? 0)}번 · 마지막 답 '${escapeHtml(row.raw ?? "-")}'</span></li>`).join("")}</ul>` : ""}
+        ${wrong.length ? `<p class="rank-meta">틀린 학생 (정답 아직)</p><ul class="admin-wrong">${wrong.map((row) => `<li>${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${Number(row.count ?? 0)}번 · 마지막 답 '${escapeHtml(row.raw ?? "-")}'</span></li>`).join("")}</ul>` : ""}
       </details>
     </article>`;
 }
@@ -994,14 +956,8 @@ async function handleAdminQuestionClick(event) {
     } else if (action === "hide-answer") {
       await update(ref(db, `quiz/questions/${qid}`), { revealed: null });
     } else if (action === "delete") {
-      if (!confirm(`${question.number}번 문제를 지울까요? 맞힌 순서 기록도 지워져요. (이미 받은 포인트는 그대로예요)`)) return;
-      await update(ref(db), {
-        [`quiz/questions/${qid}`]: null,
-        [`quiz/answers/${qid}`]: null,
-        [`quiz/attempts/${qid}`]: null,
-        [`quiz/correct/${qid}`]: null,
-        [`quiz/awards/${qid}`]: null,
-      });
+      if (!confirm(`${qid} 문제를 지울까요? 정답 순서 기록도 지워져요. (이미 받은 포인트는 그대로예요)`)) return;
+      await deleteQuestion(qid);
       setMessage(adminMessage, "문제를 지웠어요.");
     }
   } catch (error) {
@@ -1057,22 +1013,13 @@ function renderAttendance() {
   const streak = alive ? Number(attendance.streak ?? 0) : 0;
   const teacher = isTeacher(currentProfile, currentUser);
 
-  $("#streak-count").textContent = streak;
-  $("#attendance-total").textContent = `누적 ${Number(attendance?.total ?? 0)}일`;
-  $("#attendance-title").textContent = teacher
-    ? "선생님은 출석 체크를 하지 않아요"
+  $("#attendance-line").textContent = teacher
+    ? ""
     : !schoolDay
-      ? "주말은 출석 쉬는 날이에요"
+      ? "주말은 출석 쉬는 날이에요."
       : checkedToday
-        ? `출석 완료! ${streak}일 연속`
+        ? `출석 완료 (+${ATTENDANCE_POINTS}점) · ${streak}일 연속 · 누적 ${Number(attendance?.total ?? 0)}일`
         : "출석 체크하는 중…";
-
-  const inCycle = streak === 0 ? 0 : ((streak - 1) % STREAK_BONUS_EVERY) + 1;
-  $("#streak-dots").innerHTML = Array.from({ length: STREAK_BONUS_EVERY }, (_, i) => {
-    const filled = i < inCycle;
-    const bonus = i === STREAK_BONUS_EVERY - 1;
-    return `<span class="streak-dot${filled ? " filled" : ""}${bonus ? " bonus" : ""}">${bonus ? "+30" : i + 1}</span>`;
-  }).join("");
 
   // 출석은 들어오면 자동으로 된다. 버튼은 자동 출석이 실패했을 때 다시 시도하는 용도로만 보인다.
   attendanceButton.hidden = teacher || !schoolDay || checkedToday || !attendanceFailed;
@@ -1124,8 +1071,8 @@ async function checkIn(today) {
     try {
       await addMyPoints(ATTENDANCE_POINTS + bonus);
       showToast(bonus
-        ? `${streak}일 연속 출석! +${ATTENDANCE_POINTS}P, 보너스 +${bonus}P`
-        : `출석 완료! +${ATTENDANCE_POINTS}P`);
+        ? `${streak}일 연속 출석! +${ATTENDANCE_POINTS}점, 보너스 +${bonus}점`
+        : `출석 완료! +${ATTENDANCE_POINTS}점`);
       return;
     } catch (error) {
       await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
@@ -1136,7 +1083,6 @@ async function checkIn(today) {
 
 function subscribePointsLeaderboard() {
   rankUnsubscribe?.();
-  rankCaption.textContent = "현재 포인트 순위";
   const studentsQuery = query(ref(db, "leaderboardUsers"), orderByChild("points"), limitToLast(40));
 
   rankUnsubscribe = onValue(studentsQuery, async (snapshot) => {
@@ -1177,7 +1123,7 @@ function subscribePointsLeaderboard() {
           index,
           name: student.name,
           meta: student.todayResult && student.todayResult !== "-" ? student.todayResult : "",
-          value: `${formatNumber(student.points)}P`,
+          value: `${formatNumber(student.points)}점`,
           mine: student.uid === currentUser?.uid,
         })).join("")
       : `<p class="empty-text">아직 학생 기록이 없습니다.</p>`;
@@ -1280,7 +1226,7 @@ function renderPurchaseHistoryItem(item) {
         <p class="rank-meta">${formatDateTime(item.createdAt)}</p>
       </div>
       <div class="history-actions">
-        <span class="rank-points">${item.refunded ? "+0" : `-${Number(item.price ?? 0)}`}P</span>
+        <span class="rank-points">${item.refunded ? "+0" : `-${Number(item.price ?? 0)}`}점</span>
         <span class="purchase-status ${status.cls}">${status.text}</span>
       </div>
     </article>
@@ -1298,7 +1244,7 @@ function renderProductItem(product) {
     <article class="product-card${sale.open ? "" : " is-closed"}">
       ${image}
       <div class="product-body">
-        <div class="product-top">${pinnedLabel}${sale.label ? `<span class="pill ${sale.open ? "pill-time" : "pill-off"}">${escapeHtml(sale.label)}</span>` : ""}<span class="product-price">${formatNumber(Number(product.price ?? 0))}P</span></div>
+        <div class="product-top">${pinnedLabel}${sale.label ? `<span class="pill ${sale.open ? "pill-time" : "pill-off"}">${escapeHtml(sale.label)}</span>` : ""}<span class="product-price">${formatNumber(Number(product.price ?? 0))}점</span></div>
         <h3>${escapeHtml(product.title ?? "상품")}</h3>
         <p>${escapeHtml(product.description ?? "")}</p>
         <button type="button" data-product-id="${escapeAttribute(product.id)}">자세히 보기</button>
@@ -1312,14 +1258,14 @@ function openProductDialog(product) {
   const price = Number(product.price ?? 0);
   const points = Number(currentProfile?.points ?? 0);
   renderImage(dialogProductImage, product.imageUrl);
-  dialogProductPrice.textContent = `${formatNumber(price)}P`;
+  dialogProductPrice.textContent = `${formatNumber(price)}점`;
   dialogProductTitle.textContent = product.title ?? "상품";
   dialogProductDescription.textContent = product.description ?? "";
-  dialogBalance.textContent = `현재 잔액 ${formatNumber(points)}P`;
-  dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(points - price)}P`;
+  dialogBalance.textContent = `현재 잔액 ${formatNumber(points)}점`;
+  dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(points - price)}점`;
   const sale = saleState(product);
   buyProductButton.disabled = !sale.open || points < price || isTeacher(currentProfile, currentUser);
-  buyProductButton.textContent = !sale.open ? `지금은 살 수 없어요 (${sale.label})` : points < price ? `${formatNumber(price - points)}P 더 모아야 해요` : "구매하기";
+  buyProductButton.textContent = !sale.open ? `지금은 살 수 없어요 (${sale.label})` : points < price ? `${formatNumber(price - points)}점 더 모아야 해요` : "구매하기";
   setMessage(purchaseMessage, sale.open
     ? `버튼을 누르면 바로 구매되고 포인트가 차감됩니다.${product.saleEndsAt ? ` 판매 마감 ${formatDateTime(product.saleEndsAt)}` : ""}`
     : "선생님이 판매를 멈췄거나 판매 시간이 끝났어요.");
@@ -1378,9 +1324,9 @@ async function handlePurchase() {
         purchasedAt: serverTimestamp(),
       });
     }
-    setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${formatNumber(remaining)}P입니다.`);
-    dialogBalance.textContent = `현재 잔액 ${formatNumber(remaining)}P`;
-    dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(remaining)}P`;
+    setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${formatNumber(remaining)}점입니다.`);
+    dialogBalance.textContent = `현재 잔액 ${formatNumber(remaining)}점`;
+    dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(remaining)}점`;
     selectedProduct = null;
     setTimeout(() => {
       productDialog.close();
@@ -1457,7 +1403,7 @@ function renderGrantStudentOptions() {
 
   grantStudentSelect.innerHTML = adminStudents.length
     ? `<option value="">학생을 선택하세요</option>${adminStudents.map((student) => {
-        const label = `${student.name ?? student.email ?? "학생"} (${Number(student.points ?? 0)}P)`;
+        const label = `${student.name ?? student.email ?? "학생"} (${Number(student.points ?? 0)}점)`;
         return `<option value="${escapeAttribute(student.id)}">${escapeHtml(label)}</option>`;
       }).join("")}`
     : `<option value="">학생이 없습니다</option>`;
@@ -1509,7 +1455,7 @@ function renderAdminProductItem(product) {
     <article class="admin-list-item admin-product-item${onSale && !ended ? "" : " is-off"}">
       <div>
         <p class="rank-name">${escapeHtml(product.title ?? "상품")}</p>
-        <p class="rank-meta">${Number(product.price ?? 0)}P · ${escapeHtml(status)}</p>
+        <p class="rank-meta">${Number(product.price ?? 0)}점 · ${escapeHtml(status)}</p>
         <div class="sale-ends-row">
           <input type="datetime-local" data-ends-input="${id}" value="${toLocalInput(product.saleEndsAt)}" aria-label="판매 마감 시각" />
           <button class="inline-action-button" type="button" data-ends-product-id="${id}">마감 시각 저장</button>
@@ -1608,7 +1554,7 @@ function renderAdminPurchaseItem(item) {
     <article class="admin-list-item${checked ? " admin-list-item-checked" : ""}${item.refunded ? " is-off" : ""}">
       <div>
         <p class="rank-name">${escapeHtml(buyer)} · ${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${Number(item.price ?? 0)}P · 구매 ${formatDateTime(item.createdAt)}${checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : ""} · <span class="purchase-status ${status.cls}">${status.text}</span></p>
+        <p class="rank-meta">${Number(item.price ?? 0)}점 · 구매 ${formatDateTime(item.createdAt)}${checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : ""} · <span class="purchase-status ${status.cls}">${status.text}</span></p>
       </div>
       <div class="admin-product-actions">
         ${item.refunded ? "" : `<button class="inline-action-button${checked ? " is-on" : ""}" type="button" data-check-purchase-id="${id}" data-checked="${checked}">${checked ? "확인함 ✓" : "확인"}</button>
@@ -1639,14 +1585,14 @@ async function handleAdminRefund(purchaseId) {
     const purchase = (await get(purchaseRef)).val();
     if (!purchase || purchase.refunded) return;
     const price = Number(purchase.price ?? 0);
-    if (!confirm(`${purchase.studentName ?? "학생"}의 '${purchase.productTitle ?? "상품"}' 구매를 취소하고 ${price}P를 돌려줄까요?`)) return;
+    if (!confirm(`${purchase.studentName ?? "학생"}의 '${purchase.productTitle ?? "상품"}' 구매를 취소하고 ${price}점를 돌려줄까요?`)) return;
     // 먼저 취소 표시를 해 두 번 환불되지 않게 한다.
     const marked = await runTransaction(purchaseRef, (current) => (current && !current.refunded ? { ...current, refunded: true, refundedAt: Date.now(), refundedBy: currentUser.uid } : undefined));
     if (!marked.committed) return;
     const points = await runTransaction(ref(db, `users/${purchase.uid}/points`), (currentPoints) => Number(currentPoints ?? 0) + price);
     const student = (await get(ref(db, `users/${purchase.uid}`))).val();
     if (student) await syncLeaderboardProfile(purchase.uid, { ...student, points: points.snapshot.val() });
-    setMessage(adminMessage, `구매를 취소하고 ${price}P를 돌려줬어요.`);
+    setMessage(adminMessage, `구매를 취소하고 ${price}점를 돌려줬어요.`);
   } catch (error) {
     setMessage(adminMessage, error.message || "환불하지 못했습니다.");
   }
@@ -1727,8 +1673,8 @@ async function handlePointGrant(event) {
     pointGrantForm.reset();
     const name = student?.name ?? "학생";
     setMessage(adminMessage, applied > 0
-      ? `${name}에게 ${applied}P를 지급했습니다. (현재 ${total}P)`
-      : `${name}에게서 ${-applied}P를 차감했습니다. (현재 ${total}P)`);
+      ? `${name}에게 ${applied}점를 지급했습니다. (현재 ${total}점)`
+      : `${name}에게서 ${-applied}점를 차감했습니다. (현재 ${total}점)`);
   } catch (error) {
     setMessage(adminMessage, error.message || "포인트를 지급하지 못했습니다.");
   }
