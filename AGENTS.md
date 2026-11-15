@@ -5,7 +5,16 @@ Deploy this repository's database.rules.json to Firebase project morning-quest.
 The sibling morning-quest-app shares that Firebase project but has incompatible rules.
 Never replace this repository or its rules with the sibling's files wholesale.
 Keep the original users/{uid}/points balance, leaderboardUsers, attendance, shop,
-student approvals and the game lock. Minesweeper is retired. All games (15, including the
-rebuilt 색깔 판단 and 빠른 계산 (formerly 계산 20), and 순간기억 merged with the old step memory game) live in
-academy/ inside the main app's 두뇌교실 page and store records under the academy database namespace.
-The old records/ path is kept read-only history.
+student approvals and the lock switch (settings/gamesLocked, now the quiz answer lock).
+As of 2026-11 the brain-academy games are removed (the teacher will rebuild games later).
+The app is the original one-question-per-day design (quiz/questions/{YYYY-MM-DD} KST,
+first correct 150 points minus 5 per rank, wrong answer -10 and retry; quiz.mjs, quiz/ namespace):
+answers live in quiz/answers (teacher-only) and the database rules grade submissions;
+first correct answer ranks 1st. academy/ keeps only the shared stylesheet, assets and a
+redirect page; the old academy/ and records/ database paths are read-only history.
+Students sign in only with school Google accounts (@junghwa.sen.ms.kr; checked in the app
+and in the users/{uid} create rule). Data stays on the old uid: developer/ links a new Google
+login onto the old account with the project owner's Google token (Identity Toolkit
+accounts:lookup/delete/update linkProviderUserInfo); students still signed in can self-link.
+Teachers can also reset passwords for not-yet-linked students the same way, or with
+tools/reset-password.mjs and a service account.

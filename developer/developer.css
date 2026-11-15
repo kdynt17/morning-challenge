@@ -188,3 +188,17 @@
     flex: 1;
   }
 }
+.dev-link-request { align-items: flex-start; }
+.dev-link-select { display: grid; gap: 4px; margin-top: 8px; font-size: 14px; }
+.dev-link-select select { max-width: 100%; min-height: 40px; padding: 6px 8px; border: 2px solid var(--ink); border-radius: 10px; background: #fff; font-size: 14px; }
+#link-all-button { margin-bottom: 10px; }
+#link-all-button[hidden] { display: none; }
+.dev-link-request { flex-wrap: wrap; }
+.dev-link-request .dev-user-info { flex: 1 1 100%; min-width: 0; }
+.dev-link-select select { width: 100%; }
+.dev-link-request .dev-user-actions { flex: 1 1 100%; }
+.dev-list { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.dev-link-select select { min-width: 0; }
+.dev-link-request .dev-user-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex-shrink: 1; min-width: 0; }
+.dev-link-request .dev-user-actions button { min-width: 0; padding: 4px 6px; white-space: normal; }
+.dev-link-request { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }

@@ -3,171 +3,134 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffd23f" />
-    <title>2-5 아침 챌린지</title>
+    <meta name="theme-color" content="#eef4f8" />
+    <title>아침 창의력 챌린지</title>
     <meta http-equiv="Cache-Control" content="no-store" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="academy/assets/icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="academy/assets/icon-180.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="2-5 챌린지" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" />
-    <link rel="stylesheet" href="styles.css?v=20261019-sfx" />
-    <script type="module" src="app.js?v=20261019-sfx"></script>
+    <meta name="apple-mobile-web-app-title" content="아침 챌린지" />
+    <link rel="stylesheet" href="styles.css?v=20261115-classic" />
+    <script type="module" src="app.js?v=20261115-classic"></script>
   </head>
   <body>
     <main>
-      <!-- 로그인 확인 중 (저장된 로그인 정보가 있으면 이 화면에서 바로 들어간다) -->
+      <!-- 로그인 확인 중 -->
       <section id="splash-screen" class="splash-screen" aria-live="polite">
-        <img src="academy/assets/mascot-think.webp" alt="" width="140" height="140" />
-        <h1>아침 챌린지</h1>
+        <p class="eyebrow">Morning Quest</p>
+        <h1>아침 창의력 챌린지</h1>
         <p id="splash-text">들어가는 중…</p>
-        <span class="splash-dots" aria-hidden="true"><i></i><i></i><i></i></span>
       </section>
 
-      <!-- 로그인 / 회원가입 -->
       <section id="auth-screen" class="auth-screen" hidden>
         <div class="auth-hero">
-          <span class="class-badge">2학년 5반</span>
-          <h1>아침 챌린지</h1>
-          <div class="professor auth-professor">
-            <img class="mascot professor-img" src="academy/assets/mascot-professor.webp" alt="" width="150" height="150" />
-            <p class="bubble">출석 찍고, 두뇌교실 5과목 하고,<br />포인트 모아서 상점에서 쓰자!</p>
-          </div>
+          <p class="eyebrow">Morning Quest</p>
+          <h1>아침 창의력 챌린지</h1>
+          <p>매일 아침 문제를 풀고 포인트를 모아 상점 상품을 구입하세요.</p>
         </div>
-        <section class="auth-card" aria-label="로그인과 회원가입">
-          <div class="auth-mode-tabs" role="tablist" aria-label="로그인 또는 회원가입">
-            <button id="show-login-button" class="active" type="button" role="tab" aria-controls="login-panel" aria-selected="true">로그인</button>
-            <button id="show-signup-button" type="button" role="tab" aria-controls="signup-panel" aria-selected="false">회원가입</button>
-          </div>
-          <section id="login-panel" class="auth-panel active-auth-panel" aria-label="로그인">
-            <form id="login-form" class="stack-form">
-              <label>이메일<input id="login-email" name="email" type="text" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="username" required /></label>
-              <label>비밀번호<input id="login-password" name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required /></label>
-              <label class="checkbox-label"><input id="remember-me" type="checkbox" checked /> 로그인 상태 유지 (공용 컴퓨터면 끄세요)</label>
-              <button class="primary-button" type="submit">들어가기</button>
-            </form>
-            <button id="forgot-password-button" class="text-button" type="button">비밀번호를 잊었어요</button>
-          </section>
-          <section id="signup-panel" class="auth-panel" aria-label="회원가입">
-            <form id="signup-form" class="stack-form">
-              <label>이름<input id="signup-name" type="text" placeholder="홍길동" autocomplete="name" required /></label>
-              <label>이메일<input id="signup-email" type="email" placeholder="202620501@junghwa.sen.ms.kr" autocomplete="email" required /></label>
-              <label>비밀번호<input id="signup-password" type="password" placeholder="6자 이상" autocomplete="new-password" minlength="6" required /></label>
-              <button class="primary-button" type="submit">가입 신청하기</button>
-            </form>
-            <p id="signup-message" class="helper-text">가입 후 선생님이 승인하면 이용할 수 있습니다.</p>
-          </section>
-          <p id="auth-message" class="helper-text">이메일과 비밀번호로 로그인하세요.</p>
+        <section class="auth-card" aria-label="로그인">
+          <button id="google-login-button" class="primary-button google-login-button" type="button">
+            <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.5 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.2l7.8 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.8c4.3-4 6.9-9.9 6.9-17.2z"/><path fill="#FBBC05" d="M10.5 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.8c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.2-13.5-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+            학교 구글 계정으로 로그인
+          </button>
+          <p class="helper-text no-margin"><b>학번@junghwa.sen.ms.kr</b> 학교 계정만 들어올 수 있어요. 처음이면 선생님이 승인(예전 기록 연결)한 뒤 이용할 수 있어요.</p>
+          <p class="helper-text no-margin">카카오톡 안에서 열면 구글 로그인이 안 돼요. 크롬이나 사파리로 열어 주세요.</p>
+          <p id="auth-message" class="helper-text" role="status"></p>
+          <button id="teacher-login-toggle" class="text-button" type="button">선생님 로그인</button>
+          <form id="login-form" class="stack-form" hidden>
+            <label>선생님 아이디<input id="login-email" name="email" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="username" required /></label>
+            <label>비밀번호<input id="login-password" name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="secondary-button" type="submit">선생님으로 들어가기</button>
+          </form>
         </section>
       </section>
 
-      <!-- 승인 대기 -->
       <section id="pending-screen" class="auth-screen" hidden>
         <div class="auth-hero">
-          <span class="class-badge">2학년 5반</span>
-          <h1>아침 챌린지</h1>
+          <p class="eyebrow">Morning Quest</p>
+          <h1>아침 창의력 챌린지</h1>
         </div>
         <section class="auth-card" aria-label="가입 승인 대기">
-          <img class="sticker" src="academy/assets/mascot-think.webp" alt="" width="110" height="110" />
           <h2 id="pending-title">선생님 승인을 기다리고 있어요</h2>
           <p id="pending-message" class="helper-text"></p>
+          <button id="pending-relogin-button" class="primary-button" type="button" hidden>다시 구글로 로그인</button>
           <button id="pending-logout-button" class="secondary-button" type="button">로그아웃</button>
         </section>
       </section>
 
-      <!-- 앱 -->
       <section id="app-shell" class="app-shell" hidden>
         <header class="app-header">
           <div>
-            <p class="header-sub"><span class="class-chip">2-5</span><span id="today-label">오늘</span></p>
-            <h1 id="page-title">홈</h1>
+            <p id="today-label" class="eyebrow">Today</p>
+            <h1 id="page-title">오늘의 문제</h1>
           </div>
-          <button id="header-points" class="header-points" type="button" data-target-page="profile" aria-label="내 포인트">
-            <span id="header-points-value">0</span>P
-          </button>
         </header>
 
-        <!-- 홈 -->
         <section id="home-page" class="page active-page" data-page="home">
-          <p id="greeting" class="greeting">좋은 아침!</p>
-
-          <article class="card brain-hero home-brain">
-            <p class="card-label">나의 두뇌 무게</p>
-            <div id="brain-summary" class="home-brain-body"></div>
-            <p class="meter-caption">영역별 최근 7번 기록의 평균 · 재미로 보는 두뇌 무게예요</p>
-          </article>
-
-          <article class="card attendance-card">
-            <img class="sticker" src="academy/assets/mascot-medal.webp" alt="" width="92" height="92" />
-            <div class="attendance-body">
-              <p class="card-label">출석 체크</p>
-              <h2 id="attendance-title">오늘 아직 출석 전이에요</h2>
-              <div id="streak-dots" class="streak-dots" aria-label="7일 연속 출석 진행도"></div>
-              <p id="attendance-caption" class="meter-caption">월~금 들어오면 자동 출석 +10P · 7일 연속이면 +30P</p>
+          <article class="points-card">
+            <div>
+              <p class="eyebrow">My Points</p>
+              <h2><span id="my-points">0</span>점</h2>
             </div>
-            <button id="attendance-button" class="primary-button attendance-button" type="button" hidden>출석 다시 시도</button>
+            <p id="profile-message">오늘 문제를 확인해보세요.</p>
+          </article>
+          <p id="attendance-line" class="attendance-line"></p>
+          <button id="attendance-button" class="secondary-button" type="button" hidden>출석 다시 시도</button>
+
+          <article id="google-link-card" class="question-card google-link-card" hidden>
+            <h2>학교 구글 계정을 연결해 주세요</h2>
+            <p>한 번만 연결하면 다음부터 비밀번호 없이 학교 구글 계정으로 들어와요. 포인트와 구매 기록은 그대로예요.</p>
+            <button id="google-link-button" class="primary-button" type="button">학교 구글 계정 연결하기</button>
           </article>
 
-          <div class="stat-row">
-            <article class="card stat-tile">
-              <p class="card-label">오늘 연습 보상</p>
-              <p class="stat-value"><span id="daily-game-points">0</span><small> / 50P</small></p>
-              <div class="meter meter-small"><span id="daily-game-fill" class="meter-fill"></span></div>
-            </article>
-            <article class="card stat-tile">
-              <p class="card-label">연속 출석</p>
-              <p class="stat-value"><span id="streak-count">0</span><small>일</small></p>
-              <p id="attendance-total" class="meter-caption">누적 0일</p>
-            </article>
-          </div>
+          <article class="question-card">
+            <div class="card-topline">
+              <span id="challenge-date">오늘</span>
+              <span id="challenge-status" class="pill">불러오는 중</span>
+            </div>
+            <h2 id="challenge-title">오늘의 문제가 아직 등록되지 않았습니다.</h2>
+            <img id="challenge-image" class="content-image" alt="" hidden />
+            <p id="challenge-description">선생님이 문제를 등록하면 자동으로 표시됩니다.</p>
+            <p id="challenge-revealed" class="revealed-answer" hidden></p>
+            <form id="answer-form" class="stack-form">
+              <label for="answer">내 답변</label>
+              <textarea id="answer" rows="5" placeholder="답을 입력하세요" maxlength="100" required></textarea>
+              <button class="primary-button" type="submit">정답 제출</button>
+              <p id="answer-message" class="helper-text"></p>
+            </form>
+          </article>
 
-          <button class="primary-button big-cta" type="button" data-target-page="games">두뇌교실 5과목 하러 가기 →</button>
-          <a class="secondary-button link-button" href="rules.html">새 게임·포인트 규칙 보기</a>
+          <article class="profile-card">
+            <h3>오늘 정답 순서</h3>
+            <div id="today-rank-list" class="rank-list"><p class="empty-text">아직 정답자가 없습니다.</p></div>
+          </article>
         </section>
 
-        <!-- 게임 목록 -->
-        <section id="games-page" class="page" data-page="games">
-          <div id="brain-root" class="academy-root"></div>
-        </section>
-
-
-
-
-        <!-- 순위 -->
         <section id="leaderboard-page" class="page" data-page="leaderboard">
-          <p id="rank-caption" class="helper-text no-margin"></p>
+          <div class="section-title"><p class="eyebrow">Leaderboard</p><h2>포인트 순위</h2></div>
           <div id="leaderboard-list" class="rank-list"><p class="empty-text">순위를 불러오고 있어요.</p></div>
         </section>
 
-        <!-- 상점 -->
         <section id="store-page" class="page" data-page="store">
-          <p class="helper-text no-margin">포인트로 살 수 있는 상품이에요. 사면 바로 구매되고 포인트가 차감돼요. 내 정보에서 내 구매 내역을 볼 수 있어요.</p>
+          <div class="section-title"><p class="eyebrow">Store</p><h2>포인트 상점</h2></div>
           <div id="store-list" class="store-list"><p class="empty-text">상품을 불러오고 있어요.</p></div>
         </section>
 
-        <!-- 내 정보 -->
-        <section id="profile-page" class="page" data-page="profile"><a href="rules.html" class="secondary-button link-button">게임·포인트 규칙 보기</a>
-          <article class="card profile-card">
+        <section id="profile-page" class="page" data-page="profile">
+          <div class="section-title"><p class="eyebrow">Profile</p><h2>내 정보</h2></div>
+          <article class="profile-card">
             <dl>
               <div><dt>이름</dt><dd id="profile-name">-</dd></div>
               <div><dt>아이디</dt><dd id="profile-email">-</dd></div>
+              <div><dt>로그인</dt><dd id="profile-login">-</dd></div>
               <div><dt>역할</dt><dd id="profile-role">-</dd></div>
-              <div><dt>포인트</dt><dd><span id="profile-points">0</span>P</dd></div>
+              <div><dt>포인트</dt><dd><span id="profile-points">0</span>점</dd></div>
             </dl>
-            <p id="profile-message" class="helper-text"></p>
-            <button id="show-tutorials-button" class="secondary-button" type="button">게임 설명서 다시 보이게 하기</button>
-            <button id="logout-button" class="secondary-button" type="button">로그아웃</button>
+            <button id="logout-button" class="secondary-button profile-logout" type="button">로그아웃</button>
           </article>
-          <article class="card profile-card install-card">
-            <h3>앱처럼 쓰기</h3>
-            <p class="helper-text no-margin">홈 화면에 추가하면 앱처럼 바로 열리고 로그인도 유지돼요.<br />아이폰: 사파리 공유 버튼 → <b>홈 화면에 추가</b><br />안드로이드: 크롬 메뉴(⋮) → <b>홈 화면에 추가</b><br />카카오톡 안에서 열면 로그인이 자주 풀려요. 크롬이나 사파리로 열어 주세요.</p>
-          </article>
-
-          <article class="card profile-card">
+          <article class="profile-card">
             <h3>구매 내역</h3>
             <div id="purchase-history-list" class="history-list scroll-list">
               <p class="empty-text">아직 구매한 상품이 없습니다.</p>
@@ -175,27 +138,44 @@
           </article>
         </section>
 
-        <!-- 선생님 관리 -->
         <section id="admin-page" class="page" data-page="admin">
-          <a class="secondary-button link-button" href="developer/">가입자 승인 · 관리 페이지 열기</a>
-          <article class="card admin-card">
-            <h3>게임 잠금</h3>
-            <p id="game-lock-status" class="helper-text no-margin">불러오고 있어요.</p>
-            <button id="game-lock-toggle" class="primary-button" type="button">게임 잠그기</button>
+          <div class="section-title"><p class="eyebrow">Teacher</p><h2>선생님 관리</h2></div>
+          <a class="secondary-button link-button" href="developer/">가입자 관리 · 구글 연결 페이지 열기</a>
+          <article class="admin-card">
+            <h3>오늘 문제 올리기</h3>
+            <form id="challenge-form" class="stack-form">
+              <label>날짜<input id="admin-challenge-date" type="date" required /></label>
+              <label>문제 제목<input id="admin-challenge-title" type="text" placeholder="오늘의 창의력 문제" required /></label>
+              <label>문제 내용<textarea id="admin-challenge-description" rows="4" placeholder="학생들이 볼 문제를 적어주세요." required></textarea></label>
+              <label>문제 사진 주소<input id="admin-challenge-image-url" type="url" placeholder="https://..." /></label>
+              <label>문제 사진 파일<input id="admin-challenge-image-file" type="file" accept="image/*" /></label>
+              <label>정답<input id="admin-answer" type="text" placeholder="선생님만 볼 정답" required /></label>
+              <button class="primary-button" type="submit">문제 저장</button>
+            </form>
+            <button id="delete-challenge-button" class="danger-button" type="button">선택한 날짜 문제 삭제</button>
           </article>
-          <article class="card admin-card">
+          <article class="admin-card">
+            <h3>문제 기록</h3>
+            <div id="admin-question-list" class="admin-list scroll-list"><p class="empty-text">문제를 불러오고 있어요.</p></div>
+          </article>
+          <article class="admin-card">
+            <h3>문제 풀이 잠금</h3>
+            <p id="game-lock-status" class="helper-text no-margin">불러오고 있어요.</p>
+            <button id="game-lock-toggle" class="secondary-button" type="button">문제 풀이 잠그기</button>
+          </article>
+          <article class="admin-card">
             <h3>상점 열기 · 닫기</h3>
             <p id="store-lock-status" class="helper-text no-margin">불러오고 있어요.</p>
             <button id="store-lock-toggle" class="primary-button" type="button">상점 닫기</button>
             <p class="helper-text no-margin">상품을 지우지 않고 잠깐 못 사게 해요. 상품 하나만 막으려면 아래 '상점 상품 관리'에서 판매 중지를 누르세요.</p>
           </article>
-          <article class="card admin-card">
+          <article class="admin-card">
             <h3>오늘 출석</h3>
             <p id="admin-attendance-summary" class="helper-text no-margin">불러오고 있어요.</p>
             <div id="admin-attendance-list" class="chip-list"></div>
           </article>
 
-          <article class="card admin-card">
+          <article class="admin-card">
             <h3>상점 상품 추가</h3>
             <form id="product-form" class="stack-form">
               <label>상품 이름<input id="admin-product-title" type="text" placeholder="간식 교환권" required /></label>
@@ -208,16 +188,16 @@
               <button class="primary-button" type="submit">상품 저장</button>
             </form>
           </article>
-          <article class="card admin-card">
+          <article class="admin-card">
             <h3>상점 상품 관리</h3>
             <div id="admin-product-list" class="admin-list"><p class="empty-text">상품을 불러오고 있어요.</p></div>
           </article>
-          <article class="card admin-card">
+          <article class="admin-card">
             <h3>구매 기록</h3>
             <p id="admin-purchase-summary" class="helper-text no-margin"></p>
             <div id="admin-used-list" class="admin-list scroll-list"><p class="empty-text">구매 기록을 불러오고 있어요.</p></div>
           </article>
-          <article class="card admin-card">
+          <article class="admin-card">
             <h3>학생 포인트 지급·차감</h3>
             <form id="point-grant-form" class="stack-form">
               <label>학생 선택<select id="grant-student-id" required><option value="">학생을 불러오고 있어요</option></select></label>
@@ -230,29 +210,11 @@
         </section>
 
         <nav class="bottom-nav" aria-label="메뉴">
-          <button class="active" type="button" data-target-page="home" data-nav="home">
-            <img src="academy/assets/mascot-hello.webp" alt="" width="30" height="30" />홈
-          
-          </button>
-          <button type="button" data-target-page="games" data-nav="games">
-            <img src="academy/assets/mascot-professor.webp" alt="" width="30" height="30" />두뇌교실
-          </button>
-          <button type="button" data-target-page="leaderboard" data-nav="leaderboard">
-            <img src="academy/assets/mascot-medal.webp" alt="" width="30" height="30" />순위
-          
-          </button>
-          <button type="button" data-target-page="store" data-nav="store">
-            <img src="academy/assets/animal-pig.webp" alt="" width="30" height="30" />상점
-          
-          </button>
-          <button type="button" data-target-page="profile" data-nav="profile">
-            <img src="academy/assets/mascot-think.webp" alt="" width="30" height="30" />내 정보
-          
-          </button>
-          <button id="admin-nav-button" type="button" data-target-page="admin" data-nav="admin" hidden>
-            <img src="academy/assets/cat-analysis.webp" alt="" width="30" height="30" />관리
-          
-          </button>
+          <button class="active" type="button" data-target-page="home" data-nav="home">문제</button>
+          <button type="button" data-target-page="leaderboard" data-nav="leaderboard">순위</button>
+          <button type="button" data-target-page="store" data-nav="store">상점</button>
+          <button type="button" data-target-page="profile" data-nav="profile">내 정보</button>
+          <button id="admin-nav-button" type="button" data-target-page="admin" data-nav="admin" hidden>관리</button>
         </nav>
       </section>
 
@@ -262,12 +224,12 @@
           <button id="close-product-dialog" class="icon-button dialog-close" type="submit" aria-label="닫기">×</button>
         </form>
         <img id="dialog-product-image" class="dialog-image" alt="" hidden />
-        <p id="dialog-product-price" class="eyebrow">0P</p>
+        <p id="dialog-product-price" class="eyebrow">0점</p>
         <h2 id="dialog-product-title">상품</h2>
         <p id="dialog-product-description"></p>
         <div class="purchase-box">
-          <p id="dialog-balance">현재 잔액 0P</p>
-          <p id="dialog-after-balance">구매 후 잔액 0P</p>
+          <p id="dialog-balance">현재 잔액 0점</p>
+          <p id="dialog-after-balance">구매 후 잔액 0점</p>
         </div>
         <button id="buy-product-button" class="primary-button" type="button">구매하기</button>
         <p id="purchase-message" class="helper-text"></p>

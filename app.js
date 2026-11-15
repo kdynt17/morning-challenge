@@ -1,19 +1,18 @@
-import {freeClient} from './academy/free-client.js';
-import {dayKey as academyDay,closesAt as academyEnd,isHiddenUid,GAMES as ACADEMY_GAMES} from './academy/functions/domain.mjs';
-import {mountBrain,brainSummary,GUIDE_HIDDEN_PREFIX} from './academy/brain.js';
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-classic";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
-  browserSessionPersistence,
-  createUserWithEmailAndPassword,
+  browserPopupRedirectResolver,
+  GoogleAuthProvider,
   indexedDBLocalPersistence,
   initializeAuth,
+  linkWithPopup,
   onAuthStateChanged,
-  setPersistence,
-  sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
   signOut,
-  updateProfile,
+  unlink,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   get,
@@ -39,13 +38,17 @@ const ADMIN_AUTH_EMAIL = "admin@admin.com";
 const MAX_INLINE_IMAGE_BYTES = 450 * 1024;
 
 // ── 포인트 설계 ─────────────────────────────────────────────
-// 출석10P(월~금, 로그인하면 자동) + 5영역 도전 순위보상(1등100P~최소20P) + 영역별 연습10P(최대50P).
-// 출석은 자정, 게임은 오전6시 기준.
+// 하루 한 문제: 먼저 맞힌 순서대로 1등 150점, 한 등수마다 -5점. 틀리면 10점 감점 후 다시 제출(최대 10번).
+// 출석 10점(월~금, 로그인하면 자동)은 그대로 둔다.
+const FIRST_POINTS = 150;
+const WRONG_ANSWER_PENALTY = 10;
+const MAX_TRIES = 10;
 const ATTENDANCE_POINTS = 10;
 const STREAK_BONUS_EVERY = 7;
 const STREAK_BONUS_POINTS = 30;
-const LAST_EMAIL_KEY = "mc.lastEmail";
 const LAST_NAME_KEY = "mc.lastName";
+// 학생은 이 학교 구글 계정으로만 로그인한다(DB 규칙도 새 가입을 이 주소로만 받는다).
+const SCHOOL_EMAIL_DOMAIN = "junghwa.sen.ms.kr";
 const DAY_MS = 86400000;
 const KST_OFFSET_MS = 9 * 3600000;
 
@@ -57,18 +60,11 @@ const pendingScreen = $("#pending-screen");
 const pendingTitle = $("#pending-title");
 const pendingMessage = $("#pending-message");
 const appShell = $("#app-shell");
-const showLoginButton = $("#show-login-button");
-const showSignupButton = $("#show-signup-button");
-const loginPanel = $("#login-panel");
-const signupPanel = $("#signup-panel");
 const loginForm = $("#login-form");
-const signupForm = $("#signup-form");
 const authMessage = $("#auth-message");
-const signupMessage = $("#signup-message");
 const pageTitle = $("#page-title");
 const todayLabel = $("#today-label");
 const leaderboardList = $("#leaderboard-list");
-const rankCaption = $("#rank-caption");
 const storeList = $("#store-list");
 const profileMessage = $("#profile-message");
 const purchaseHistoryList = $("#purchase-history-list");
@@ -93,8 +89,7 @@ const purchaseMessage = $("#purchase-message");
 const attendanceButton = $("#attendance-button");
 
 const pageNames = {
-  home: "홈",
-  games: "두뇌교실",
+  home: "오늘의 문제",
   leaderboard: "순위",
   store: "포인트 상점",
   profile: "내 정보",
@@ -111,12 +106,18 @@ let unsubscribers = [];
 let rankUnsubscribe = null;
 let serverOffsetMs = 0;
 let attendance = null;
-let brainData = null;
 let toastTimer = null;
 let sessionDay = null;
-let brainMount = null;
-// 선생님이 켜면 학생은 게임을 시작할 수 없다(settings/gamesLocked).
+// 선생님이 켜면 학생은 문제 답을 낼 수 없다(settings/gamesLocked, 예전 게임 잠금 자리를 그대로 쓴다).
 let gamesLocked = false;
+// 문제 풀이
+let quizQuestions = [];
+const quizCorrect = {};
+const quizMine = {};
+const quizAwards = {};
+const quizAwarding = new Set();
+let quizUnsubs = {};
+let adminQuizData = { answers: {}, attempts: {}, awards: {} };
 // 선생님이 상점을 닫으면 학생은 아무것도 살 수 없다(settings/storeClosed).
 let storeClosed = false;
 let storeProducts = [];
@@ -127,7 +128,8 @@ if (setupRequired) {
 } else {
   const app = initializeApp(firebaseConfig);
   // 로그인 정보를 IndexedDB(안 되면 localStorage)에 저장해, 다음에 열면 바로 들어가지게 한다.
-  auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] });
+  auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence], popupRedirectResolver: browserPopupRedirectResolver });
+  auth.languageCode = "ko";
   db = getDatabase(app);
   showSplash();
 
@@ -135,11 +137,19 @@ if (setupRequired) {
     serverOffsetMs = Number(snapshot.val() ?? 0);
   });
 
-  showLoginButton.addEventListener("click", () => setAuthMode("login"));
-  showSignupButton.addEventListener("click", () => setAuthMode("signup"));
   loginForm.addEventListener("submit", handleLogin);
-  $("#forgot-password-button").addEventListener("click", handlePasswordReset);
-  signupForm.addEventListener("submit", handleSignup);
+  $("#google-login-button").addEventListener("click", handleGoogleLogin);
+  $("#pending-relogin-button").addEventListener("click", handleGoogleLogin);
+  $("#google-link-button").addEventListener("click", handleGoogleLink);
+  $("#teacher-login-toggle").addEventListener("click", () => {
+    loginForm.hidden = !loginForm.hidden;
+    if (!loginForm.hidden) $("#login-email").focus();
+  });
+  $("#answer-form").addEventListener("submit", handleAnswerSubmit);
+  $("#challenge-form").addEventListener("submit", handleChallengeSave);
+  $("#delete-challenge-button").addEventListener("click", handleChallengeDelete);
+  $("#admin-challenge-date").value = todayKey();
+  $("#admin-question-list").addEventListener("click", handleAdminQuestionClick);
   $("#logout-button").addEventListener("click", () => signOut(auth));
   $("#pending-logout-button").addEventListener("click", () => signOut(auth));
   productForm.addEventListener("submit", handleProductSave);
@@ -152,19 +162,13 @@ if (setupRequired) {
   document.querySelectorAll("[data-target-page]").forEach((button) => {
     button.addEventListener("click", () => showPage(button.dataset.targetPage));
   });
-  // 휴대폰·브라우저 뒤로 가기: 앱 안의 이전 화면으로 돌아간다(두뇌교실 게임은 brain.js가 따로 닫는다).
+  // 휴대폰·브라우저 뒤로 가기: 앱 안의 이전 화면으로 돌아간다.
   window.addEventListener("popstate", (event) => {
     if (!document.body.classList.contains("is-authenticated")) return;
     const page = event.state?.page ?? "home";
     showPage(pageNames[page] ? page : "home", { push: false });
   });
 
-  // 내 정보 → 게임 설명서 다시 보이게 하기
-  $("#show-tutorials-button").addEventListener("click", () => {
-    ACADEMY_GAMES.forEach((game) => storeLocal(GUIDE_HIDDEN_PREFIX + game.id, null));
-    showToast("연습을 시작하면 설명서가 다시 나와요.");
-  });
-  setAuthMode("login");
 
   // 자정이나 월이 바뀐 채로 화면을 켜 두면 날짜 기준 구독을 새로 연다.
   setInterval(() => {
@@ -181,10 +185,19 @@ if (setupRequired) {
     currentProfile = null;
     selectedProduct = null;
     attendance = null;
-    brainData = null;
 
     if (!user) {
       showSignedOut();
+      return;
+    }
+
+    // 학교 계정이 아닌 구글 계정이면 막는다. 방금 새로 생긴 계정이면 지워서 흔적을 남기지 않는다.
+    const googleEmail = googleEmailOf(user);
+    if (googleEmail && !isSchoolEmail(googleEmail)) {
+      const onlyGoogle = user.providerData.every((info) => info.providerId === "google.com");
+      await (onlyGoogle ? user.delete() : Promise.reject()).catch(() => signOut(auth));
+      showSignedOut();
+      setMessage(authMessage, `${googleEmail} 은(는) 학교 계정이 아니에요. 학번@${SCHOOL_EMAIL_DOMAIN} 구글 계정으로 로그인해 주세요.`);
       return;
     }
 
@@ -200,14 +213,18 @@ if (setupRequired) {
       void signOut(auth);
       return;
     }
+    // 구글로 들어왔는데 기록에 아직 없으면 적어 둔다(예전 계정에 자동으로 합쳐진 경우).
+    if (googleEmail && currentProfile && !currentProfile.googleEmail && !isTeacher(currentProfile, user)) {
+      void update(ref(db, `users/${user.uid}`), { googleEmail, loginProvider: "google", googleLinkedAt: serverTimestamp() }).catch(() => {});
+    }
     if (!isApproved(currentProfile, user)) {
       waitForApproval();
       return;
     }
-    // 두뇌교실 화면의 아래 메뉴에서 ?page=store 처럼 들어오면 그 화면을 연다.
+    // ?page=store 처럼 들어오면 그 화면을 연다(예전 두뇌교실 주소 ?page=games 는 문제 화면으로).
     const params = new URLSearchParams(location.search);
     const requestedPage = params.get("page");
-    enterApp(params.has("game") ? "games" : ["games", "leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
+    enterApp(["leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
   });
 }
 
@@ -219,9 +236,7 @@ function enterApp(page = "home") {
   showPage(page, { push: false });
   subscribeProfile();
   subscribeAttendance();
-  mountAcademy();
-  subscribeGameDaily();
-  subscribeBrain();
+  subscribeQuiz();
   subscribePointsLeaderboard();
   subscribeStore();
   subscribePurchaseHistory();
@@ -253,77 +268,98 @@ function showPendingApproval(profile) {
   pendingScreen.hidden = false;
 
   const rejected = profile?.status === "rejected";
+  const linked = profile?.status === "linked";
+  $("#pending-relogin-button").hidden = !linked;
+  if (linked) {
+    // 선생님이 이 구글 계정을 예전 계정(기록)에 붙였다. 다시 로그인하면 예전 계정으로 들어간다.
+    pendingTitle.textContent = "예전 기록과 연결됐어요!";
+    pendingMessage.textContent = "아래 '다시 구글로 로그인'을 누르면 포인트·출석 기록이 있는 원래 계정으로 들어가요.";
+    return;
+  }
   pendingTitle.textContent = rejected ? "가입이 승인되지 않았습니다" : "선생님 승인을 기다리고 있어요";
   pendingMessage.textContent = rejected
     ? "선생님에게 확인해 주세요."
-    : `${profile?.name ?? "학생"} 님의 가입 신청이 접수되었습니다. 선생님이 승인하면 이 화면이 자동으로 넘어갑니다.`;
+    : `${profile?.name ?? "학생"} 님(${profile?.authEmail ?? ""})의 로그인이 접수됐어요. 선생님이 예전 기록과 연결(또는 승인)하면 이 화면이 자동으로 넘어가요.`;
 }
 
-// ── 로그인 / 가입 ───────────────────────────────────────────
+// ── 로그인 (학생: 학교 구글 계정, 선생님: 아이디·비밀번호) ───────────
+
+function schoolGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+  // hd: 구글 창에서 학교 계정만 고르도록 안내(진짜 검사는 로그인 뒤 + DB 규칙)
+  provider.setCustomParameters({ hd: SCHOOL_EMAIL_DOMAIN, prompt: "select_account" });
+  return provider;
+}
+
+function googleEmailOf(user) {
+  return user?.providerData?.find((info) => info.providerId === "google.com")?.email ?? null;
+}
+
+function isSchoolEmail(email) {
+  return typeof email === "string" && email.toLowerCase().endsWith(`@${SCHOOL_EMAIL_DOMAIN}`);
+}
+
+async function handleGoogleLogin() {
+  setMessage(authMessage, "구글 로그인 창을 여는 중이에요.");
+  try {
+    await signInWithPopup(auth, schoolGoogleProvider());
+  } catch (error) {
+    if (error.code === "auth/popup-blocked" || error.code === "auth/operation-not-supported-in-this-environment") {
+      await signInWithRedirect(auth, schoolGoogleProvider()).catch((redirectError) => setMessage(authMessage, authErrorMessage(redirectError.code)));
+      return;
+    }
+    setMessage(authMessage, authErrorMessage(error.code));
+  }
+}
 
 async function handleLogin(event) {
   event.preventDefault();
   setMessage(authMessage, "로그인하는 중입니다.");
-  const rawLogin = $("#login-email").value.trim();
-  const password = $("#login-password").value;
-  const email = normalizeLoginEmail(rawLogin);
-  const remember = $("#remember-me").checked;
-
   try {
-    await setPersistence(auth, remember ? indexedDBLocalPersistence : browserSessionPersistence);
-    await signInWithEmailAndPassword(auth, email, password);
-    storeLocal(LAST_EMAIL_KEY, remember ? rawLogin : null);
+    await signInWithEmailAndPassword(auth, normalizeLoginEmail($("#login-email").value), $("#login-password").value);
   } catch (error) {
     setMessage(authMessage, authErrorMessage(error.code));
   }
 }
 
-async function handlePasswordReset() {
-  const email = $("#login-email").value.trim();
-  if (!email) {
-    setMessage(authMessage, "위 이메일 칸에 가입한 이메일을 먼저 입력하세요.");
-    $("#login-email").focus();
-    return;
-  }
-  if (normalizeLoginEmail(email) === ADMIN_AUTH_EMAIL) {
-    setMessage(authMessage, "관리자 계정은 Firebase 콘솔에서 비밀번호를 바꿔주세요.");
-    return;
-  }
-
+// 예전(비밀번호) 계정으로 들어와 있는 학생이 스스로 학교 구글 계정을 붙인다. 계정이 그대로라 기록도 그대로다.
+async function handleGoogleLink() {
+  const button = $("#google-link-button");
+  button.disabled = true;
   try {
-    setMessage(authMessage, "재설정 메일을 보내는 중입니다.");
-    auth.languageCode = "ko";
-    await sendPasswordResetEmail(auth, email);
-    setMessage(authMessage, `${email}로 비밀번호 재설정 메일을 보냈습니다. 메일함(스팸함 포함)에서 링크를 눌러 새 비밀번호를 정하세요.`);
+    const result = await linkWithPopup(currentUser, schoolGoogleProvider());
+    const googleEmail = googleEmailOf(result.user);
+    if (!isSchoolEmail(googleEmail)) {
+      await unlink(currentUser, "google.com").catch(() => {});
+      showToast(`${googleEmail ?? "이 계정"} 은(는) 학교 계정이 아니에요. 학번@${SCHOOL_EMAIL_DOMAIN} 계정을 골라 주세요.`);
+      return;
+    }
+    // 이제 구글로만 들어오므로 예전 비밀번호는 지운다.
+    if (currentUser.providerData.some((info) => info.providerId === "password")) {
+      await unlink(currentUser, "password").catch(() => {});
+    }
+    await update(ref(db, `users/${currentUser.uid}`), { googleEmail, loginProvider: "google", googleLinkedAt: serverTimestamp() }).catch(() => {});
+    showToast("학교 구글 계정을 연결했어요! 다음부터 구글로 로그인해요.");
+    renderGoogleLink();
   } catch (error) {
-    setMessage(authMessage, authErrorMessage(error.code));
+    if (error.code === "auth/credential-already-in-use") {
+      showToast("그 구글 계정으로 따로 로그인한 적이 있어요. 선생님께 '예전 기록 연결'을 부탁해 주세요.");
+    } else if (error.code === "auth/provider-already-linked") {
+      renderGoogleLink();
+    } else {
+      showToast(authErrorMessage(error.code));
+    }
+  } finally {
+    button.disabled = false;
   }
 }
 
-async function handleSignup(event) {
-  event.preventDefault();
-  const name = $("#signup-name").value.trim();
-  const email = $("#signup-email").value.trim();
-  const password = $("#signup-password").value;
-
-  try {
-    setMessage(signupMessage, "가입하는 중입니다.");
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(credential.user, { displayName: name });
-    await set(ref(db, `users/${credential.user.uid}`), {
-      name,
-      email,
-      authEmail: credential.user.email,
-      role: "student",
-      status: "pending",
-      points: 0,
-      todayResult: "-",
-      createdAt: serverTimestamp(),
-    });
-    setMessage(signupMessage, "가입 신청이 완료되었습니다. 선생님 승인을 기다려 주세요.");
-  } catch (error) {
-    setMessage(signupMessage, authErrorMessage(error.code));
-  }
+function renderGoogleLink() {
+  if (!currentUser) return;
+  const teacher = isTeacher(currentProfile, currentUser);
+  const googleEmail = googleEmailOf(currentUser);
+  $("#google-link-card").hidden = teacher || Boolean(googleEmail);
+  $("#profile-login").textContent = teacher ? "선생님 아이디" : googleEmail ? `학교 구글 (${googleEmail})` : "예전 비밀번호 (구글 연결 필요)";
 }
 
 async function ensureProfile(user) {
@@ -353,12 +389,14 @@ async function ensureProfile(user) {
     return profile;
   }
 
+  const googleEmail = googleEmailOf(user);
   const profile = {
     name: isAdmin ? "선생님" : user.displayName || "학생",
     email: isAdmin ? ADMIN_LOGIN : user.email,
     authEmail: user.email,
     role: isAdmin ? "teacher" : "student",
     ...(isAdmin ? {} : { status: "pending" }),
+    ...(googleEmail ? { loginProvider: "google", googleEmail } : {}),
     points: 0,
     todayResult: "-",
     createdAt: serverTimestamp(),
@@ -388,14 +426,14 @@ function renderProfile(user, profile) {
   const teacher = isTeacher(profile, user);
   const points = Number(profile?.points ?? 0);
 
-  $("#header-points-value").textContent = formatNumber(points);
+  $("#my-points").textContent = formatNumber(points);
   $("#profile-points").textContent = formatNumber(points);
   $("#profile-name").textContent = name;
   $("#profile-email").textContent = profile?.email ?? user.email;
   $("#profile-role").textContent = teacher ? "선생님" : "학생";
-  $("#greeting").textContent = `${name} 님, ${greetingByHour()}`;
-  profileMessage.textContent = teacher ? "선생님 계정은 포인트와 게임 기록이 저장되지 않아요." : "";
+  profileMessage.textContent = teacher ? "선생님 계정은 포인트가 저장되지 않습니다." : `${name} 님, 오늘 문제를 확인해보세요.`;
   adminNavButton.hidden = !teacher;
+  renderGoogleLink();
   document.body.classList.toggle("is-teacher", teacher);
   renderAttendance();
 }
@@ -427,17 +465,6 @@ async function syncLeaderboardProfile(uid, profile) {
   });
 }
 
-function setAuthMode(mode) {
-  const isSignup = mode === "signup";
-  loginPanel.classList.toggle("active-auth-panel", !isSignup);
-  signupPanel.classList.toggle("active-auth-panel", isSignup);
-  showLoginButton.classList.toggle("active", !isSignup);
-  showSignupButton.classList.toggle("active", isSignup);
-  showLoginButton.setAttribute("aria-selected", String(!isSignup));
-  showSignupButton.setAttribute("aria-selected", String(isSignup));
-  setMessage(authMessage, isSignup ? "이름, 이메일, 비밀번호를 입력하세요." : "이메일과 비밀번호로 로그인하세요.");
-}
-
 function showSplash() {
   const lastName = readLocal(LAST_NAME_KEY);
   $("#splash-text").textContent = lastName ? `${lastName} 님, 들어가는 중…` : "들어가는 중…";
@@ -464,20 +491,12 @@ function showSignedOut() {
   authScreen.hidden = false;
   pendingScreen.hidden = true;
   appShell.hidden = true;
-  setAuthMode("login");
-  const lastEmail = readLocal(LAST_EMAIL_KEY);
-  if (lastEmail && !$("#login-email").value) {
-    $("#login-email").value = lastEmail;
-    $("#login-password").focus({ preventScroll: true });
-  }
 }
 
 function showPage(page, { push = true } = {}) {
   if (!pageNames[page]) page = "home";
   const current = document.querySelector(".page.active-page")?.dataset.page;
   if (push && page !== current) history.pushState({ page }, "");
-  // 두뇌교실 밖으로 나가면 진행 중인 게임 화면을 닫는다(오늘의 도전은 '이어서 하기'로 돌아올 수 있음).
-  if (page !== "games") brainMount?.exit?.();
   document.querySelectorAll(".page").forEach((section) => {
     section.classList.toggle("active-page", section.dataset.page === page);
   });
@@ -490,37 +509,19 @@ function showPage(page, { push = true } = {}) {
   window.scrollTo({ top: 0 });
 }
 
-// ── 두뇌교실 (같은 화면 안에서 연다) ─────────────────────────
-
-function mountAcademy() {
-  const root = $("#brain-root");
-  brainMount?.();
-  brainMount = null;
-  if (isTeacher(currentProfile, currentUser)) {
-    root.innerHTML = `<p class="empty-text">두뇌교실 게임은 학생 계정으로 참여해요.</p>`;
-    return;
-  }
-  if (gamesLocked) {
-    root.innerHTML = `<p class="empty-text">지금은 선생님이 게임을 잠가 두었어요. 잠금이 풀리면 다시 할 수 있어요.</p>`;
-    return;
-  }
-  brainMount = mountBrain({ db, user: currentUser, root });
-}
-
-// ── 게임 잠금 (선생님이 켜고 끔) ───────────────────────────
+// ── 문제 풀이 잠금 (선생님이 켜고 끔, DB 자리는 예전 게임 잠금 settings/gamesLocked) ──
 
 function subscribeGameLock() {
+  let firstLoad = true;
   const unsubscribe = onValue(ref(db, "settings/gamesLocked"), (snapshot) => {
     const locked = snapshot.val() === true;
-    const changed = locked !== gamesLocked;
+    const changed = locked !== gamesLocked && !firstLoad;
+    firstLoad = false;
     gamesLocked = locked;
     renderGameLockAdmin();
+    renderChallenge();
     if (!changed || isTeacher(currentProfile, currentUser)) return;
-    if (locked) {
-      brainMount?.exit?.();
-      showToast("선생님이 게임을 잠갔어요. 하던 오늘의 도전은 잠금이 풀리면 처음부터 다시 해요.");
-    }
-    mountAcademy();
+    showToast(locked ? "선생님이 문제 풀이를 잠갔어요." : "문제 풀이 잠금이 풀렸어요.");
   }, () => {});
   unsubscribers.push(unsubscribe);
 }
@@ -529,19 +530,444 @@ function renderGameLockAdmin() {
   const button = $("#game-lock-toggle");
   if (!button) return;
   $("#game-lock-status").textContent = gamesLocked
-    ? "지금 학생들은 게임을 할 수 없어요. 잠글 때 오늘의 도전을 하던 학생은 풀린 뒤 처음부터 다시 해요."
-    : "지금 학생들은 게임을 할 수 있어요.";
-  button.textContent = gamesLocked ? "게임 잠금 풀기" : "게임 잠그기";
+    ? "지금 학생들은 문제를 볼 수는 있지만 답을 낼 수 없어요."
+    : "지금 학생들은 공개된 문제에 답을 낼 수 있어요.";
+  button.textContent = gamesLocked ? "문제 풀이 잠금 풀기" : "문제 풀이 잠그기";
 }
 
 async function handleGameLockToggle() {
   if (!isTeacher(currentProfile, currentUser)) return;
   try {
-    // 잠글 때 시각을 남긴다. 그때 오늘의 도전을 하던 학생은 잠금이 풀린 뒤 처음부터 다시 한다.
-    await update(ref(db, "settings"), gamesLocked ? { gamesLocked: false } : { gamesLocked: true, lockResetAt: serverTimestamp() });
+    await set(ref(db, "settings/gamesLocked"), !gamesLocked);
   } catch (error) {
     setMessage(adminMessage, authErrorMessage(error.code));
   }
+}
+
+// ── 오늘의 문제 (선생님이 올리고, 먼저 맞힌 순서대로 포인트) ──────────────
+// 채점은 DB 규칙이 한다: 정답(quiz/answers)은 선생님만 읽을 수 있고,
+// 학생은 답을 quiz/attempts에 적은 뒤 quiz/correct에 '맞혔다'를 써 본다. 정답이 아니면 규칙이 거절한다.
+
+// 한국 날짜 "YYYY-MM-DD" — 하루 한 문제의 열쇠
+function todayKey() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(serverNow()));
+}
+
+function subscribeQuiz() {
+  const teacher = isTeacher(currentProfile, currentUser);
+  const today = todayKey();
+  const apply = (list) => {
+    list.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    quizQuestions = list;
+    syncQuizSubscriptions();
+    renderChallenge();
+    renderAdminQuestions();
+  };
+  if (teacher) {
+    // 선생님은 지난 문제 기록도 본다.
+    const recent = query(ref(db, "quiz/questions"), orderByChild("createdAt"), limitToLast(60));
+    unsubscribers.push(onValue(recent, (snapshot) => {
+      const list = [];
+      snapshot.forEach((child) => { list.push({ id: child.key, ...child.val() }); });
+      apply(list);
+    }, () => {}));
+  } else {
+    // 학생은 오늘 문제 하나만 본다.
+    unsubscribers.push(onValue(ref(db, `quiz/questions/${today}`), (snapshot) => {
+      apply(snapshot.exists() ? [{ id: today, ...snapshot.val() }] : []);
+    }, () => {
+      setMessage($("#answer-message"), "문제를 불러오지 못했어요. 선생님께 말해 주세요.");
+    }));
+  }
+}
+
+// 학생에게 보이는 문제: 받는 중이거나 마감된 문제(숨김 문제는 안 보임)
+function isVisibleQuestion(question) {
+  return question.open === true || Boolean(question.closedAt);
+}
+
+function watchQuiz(key, path, onData) {
+  if (quizUnsubs[key]) return;
+  quizUnsubs[key] = onValue(ref(db, path), (snapshot) => onData(snapshot.val()), () => {});
+}
+
+function syncQuizSubscriptions() {
+  const teacher = isTeacher(currentProfile, currentUser);
+  const wanted = new Set();
+  for (const question of quizQuestions) {
+    const qid = question.id;
+    if (!teacher && !isVisibleQuestion(question)) continue;
+    wanted.add(`correct:${qid}`);
+    watchQuiz(`correct:${qid}`, `quiz/correct/${qid}`, (value) => {
+      quizCorrect[qid] = value ?? {};
+      maybeResumeAward(qid);
+      renderChallenge();
+      renderAdminQuestions();
+    });
+    if (teacher) {
+      wanted.add(`attempts:${qid}`).add(`awards:${qid}`);
+      watchQuiz(`attempts:${qid}`, `quiz/attempts/${qid}`, (value) => { adminQuizData.attempts[qid] = value ?? {}; renderAdminQuestions(); });
+      watchQuiz(`awards:${qid}`, `quiz/awards/${qid}`, (value) => { adminQuizData.awards[qid] = value ?? {}; renderAdminQuestions(); });
+    } else {
+      wanted.add(`mine:${qid}`).add(`award:${qid}`);
+      watchQuiz(`mine:${qid}`, `quiz/attempts/${qid}/${currentUser.uid}`, (value) => { quizMine[qid] = value; renderChallenge(); });
+      watchQuiz(`award:${qid}`, `quiz/awards/${qid}/${currentUser.uid}`, (value) => {
+        quizAwards[qid] = value;
+        maybeResumeAward(qid);
+        renderChallenge();
+      });
+    }
+  }
+  for (const key of Object.keys(quizUnsubs)) {
+    if (wanted.has(key)) continue;
+    quizUnsubs[key]();
+    delete quizUnsubs[key];
+  }
+}
+
+function questionById(qid) {
+  return quizQuestions.find((question) => question.id === qid);
+}
+
+function myRankIn(qid) {
+  return correctOrder(quizCorrect[qid], isHiddenUid).find((row) => row.uid === currentUser?.uid)?.rank ?? null;
+}
+
+// 홈: 오늘의 문제 카드 (예전 화면 그대로)
+function renderChallenge() {
+  if (!currentUser) return;
+  const teacher = isTeacher(currentProfile, currentUser);
+  const today = todayKey();
+  const question = questionById(today);
+  const visible = question && isVisibleQuestion(question);
+  const status = $("#challenge-status");
+  const submit = $("#answer-form button");
+  const message = $("#answer-message");
+  $("#challenge-date").textContent = today;
+  status.className = "pill";
+
+  if (!visible) {
+    $("#challenge-title").textContent = "오늘의 문제가 아직 등록되지 않았습니다.";
+    $("#challenge-description").textContent = "선생님이 문제를 등록하면 자동으로 표시됩니다.";
+    renderImage($("#challenge-image"), "");
+    $("#challenge-revealed").hidden = true;
+    status.textContent = "아직 공개 전";
+    submit.disabled = true;
+    setMessage(message, "");
+    $("#today-rank-list").innerHTML = `<p class="empty-text">아직 정답자가 없습니다.</p>`;
+    return;
+  }
+
+  $("#challenge-title").textContent = question.title || "오늘의 문제";
+  $("#challenge-description").textContent = question.text ?? "";
+  renderImage($("#challenge-image"), question.imageUrl);
+  $("#challenge-revealed").hidden = !question.revealed;
+  $("#challenge-revealed").textContent = question.revealed ? `정답: ${question.revealed}` : "";
+
+  const order = correctOrder(quizCorrect[today], isHiddenUid);
+  const solved = Boolean(quizCorrect[today]?.[currentUser.uid]);
+  const used = Number(quizMine[today]?.count ?? 0);
+  const left = Math.max(0, Number(question.maxTries ?? MAX_TRIES) - used);
+  const award = quizAwards[today];
+  const rank = myRankIn(today);
+
+  if (teacher) {
+    status.textContent = question.open ? "제출 가능" : "마감";
+    submit.disabled = true;
+    setMessage(message, "선생님 계정은 답을 제출하지 않아요. 관리 화면에서 정답자를 확인하세요.");
+  } else if (solved) {
+    status.textContent = "제출 완료";
+    status.classList.add("is-done");
+    submit.disabled = true;
+    const points = award?.points ?? pointsForRank(rank ?? order.length, question.firstPoints);
+    setMessage(message, `정답입니다! ${rank ?? "-"}번째 정답으로 ${formatNumber(points)}점${award?.paid ? "을 받았습니다." : "을 받는 중입니다."}`);
+  } else if (!question.open) {
+    status.textContent = "마감";
+    status.classList.add("is-closed");
+    submit.disabled = true;
+    setMessage(message, "오늘 문제는 마감되었습니다.");
+  } else if (gamesLocked) {
+    status.textContent = "잠김";
+    status.classList.add("is-closed");
+    submit.disabled = true;
+    setMessage(message, "지금은 선생님이 문제 풀이를 잠가 두었습니다.");
+  } else if (left === 0) {
+    status.textContent = "기회 끝";
+    status.classList.add("is-closed");
+    submit.disabled = true;
+    setMessage(message, `${used}번 모두 틀렸어요. 내일 문제에 다시 도전해요.`);
+  } else {
+    status.textContent = "제출 가능";
+    submit.disabled = submittingAnswer;
+  }
+
+  $("#today-rank-list").innerHTML = order.length
+    ? order.map((row, index) => renderRankItem({
+        index,
+        name: row.name,
+        meta: formatClock(row.at),
+        value: `${formatNumber(pointsForRank(row.rank, question.firstPoints))}점`,
+        mine: row.uid === currentUser.uid,
+      })).join("")
+    : `<p class="empty-text">아직 정답자가 없습니다. 1등을 노려 보세요!</p>`;
+}
+
+let submittingAnswer = false;
+
+async function handleAnswerSubmit(event) {
+  event.preventDefault();
+  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
+  const today = todayKey();
+  const question = questionById(today);
+  const message = $("#answer-message");
+  if (!question || !question.open) return setMessage(message, "오늘 문제가 열려 있지 않습니다.");
+  if (gamesLocked) return setMessage(message, "지금은 선생님이 문제 풀이를 잠가 두었습니다.");
+  if (quizCorrect[today]?.[currentUser.uid]) return setMessage(message, "이미 정답을 제출했습니다. 포인트는 한 번만 지급됩니다.");
+
+  const input = $("#answer");
+  const raw = input.value.trim().slice(0, MAX_RAW_ANSWER);
+  const key = answerKey("text", raw);
+  if (!key) return;
+  const used = Number(quizMine[today]?.count ?? 0);
+  if (used >= Number(question.maxTries ?? MAX_TRIES)) return setMessage(message, "제출 기회를 모두 썼습니다.");
+
+  const uid = currentUser.uid;
+  const name = currentProfile?.name ?? "";
+  submittingAnswer = true;
+  $("#answer-form button").disabled = true;
+  setMessage(message, "채점하는 중입니다.");
+  try {
+    try {
+      await set(ref(db, `quiz/attempts/${today}/${uid}`), { name, count: used + 1, last: key, raw, at: serverTimestamp() });
+    } catch (error) {
+      setMessage(message, "제출하지 못했습니다. 마감됐거나 잠겼는지 확인해 주세요.");
+      return;
+    }
+    // 정답이면 DB 규칙이 받아 주고, 틀리면 거절한다.
+    let correct = true;
+    try {
+      await set(ref(db, `quiz/correct/${today}/${uid}`), { name, at: serverTimestamp() });
+    } catch (error) {
+      correct = false;
+    }
+    if (!correct) {
+      const remaining = await applyWrongAnswerPenalty();
+      const left = Number(question.maxTries ?? MAX_TRIES) - (used + 1);
+      setMessage(message, `틀렸어요. ${WRONG_ANSWER_PENALTY}점이 차감되어 현재 ${formatNumber(remaining)}점입니다. ${left > 0 ? `답을 고쳐서 다시 제출할 수 있습니다. (남은 기회 ${left}번)` : "기회를 모두 썼습니다."}`);
+      return;
+    }
+    input.value = "";
+    await awardQuiz(question);
+  } finally {
+    submittingAnswer = false;
+    renderChallenge();
+  }
+}
+
+// 틀리면 10점 감점(0점 아래로는 안 내려감)
+async function applyWrongAnswerPenalty() {
+  try {
+    const result = await runTransaction(ref(db, `users/${currentUser.uid}/points`), (current) => Math.max(0, Number(current ?? 0) - WRONG_ANSWER_PENALTY));
+    const total = Number(result.snapshot.val() ?? 0);
+    await syncLeaderboardProfile(currentUser.uid, { ...currentProfile, points: total });
+    return total;
+  } catch (error) {
+    return Number(currentProfile?.points ?? 0);
+  }
+}
+
+// 맞힌 순서대로 포인트를 받는다. 받기 전에 끊겼으면 다음에 열 때 이어서 받는다.
+function maybeResumeAward(qid) {
+  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
+  if (!quizCorrect[qid]?.[currentUser.uid]) return;
+  if (!(qid in quizAwards)) return;
+  if (quizAwards[qid]?.paid) return;
+  const question = questionById(qid);
+  if (question) void awardQuiz(question);
+}
+
+async function awardQuiz(question) {
+  const qid = question.id;
+  const uid = currentUser.uid;
+  if (quizAwarding.has(qid)) return;
+  quizAwarding.add(qid);
+  try {
+    const awardRef = ref(db, `quiz/awards/${qid}/${uid}`);
+    let award = (await get(awardRef)).val();
+    if (!award) {
+      const order = correctOrder((await get(ref(db, `quiz/correct/${qid}`))).val(), isHiddenUid);
+      const rank = order.find((row) => row.uid === uid)?.rank ?? order.length + 1;
+      award = { rank, points: pointsForRank(rank, question.firstPoints), paid: false, at: serverTimestamp() };
+      await set(awardRef, award);
+    }
+    if (!award.paid) {
+      if (award.points > 0) await addMyPoints(award.points);
+      await update(awardRef, { paid: true });
+      setMessage($("#answer-message"), `정답입니다! ${award.rank}번째 정답으로 ${formatNumber(award.points)}점을 받았습니다.`);
+    }
+  } catch (error) {
+    console.error(error);
+    setMessage($("#answer-message"), "정답 처리는 됐지만 포인트를 아직 못 받았어요. 앱을 다시 열면 이어서 받아요.");
+  } finally {
+    quizAwarding.delete(qid);
+  }
+}
+
+// ── 선생님: 문제 올리기·관리 ────────────────────────────────
+
+async function handleChallengeSave(event) {
+  event.preventDefault();
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const button = event.target.querySelector("button[type=submit]");
+  try {
+    const dateKey = $("#admin-challenge-date").value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("날짜를 골라 주세요.");
+    const title = $("#admin-challenge-title").value.trim();
+    const text = $("#admin-challenge-description").value.trim();
+    const answer = $("#admin-answer").value.trim();
+    const keys = textAnswerKeys(answer);
+    if (!text) throw new Error("문제 내용을 적어 주세요.");
+    if (!keys.length) throw new Error("정답을 적어 주세요.");
+    const existing = (await get(ref(db, `quiz/questions/${dateKey}`))).exists();
+    if (existing && !confirm(`${dateKey}에 이미 문제가 있어요. 새 문제로 바꾸면 그날 제출·정답 기록이 지워져요(이미 받은 포인트는 그대로). 바꿀까요?`)) return;
+    button.disabled = true;
+    setMessage(adminMessage, "문제를 저장하는 중입니다.");
+    const imageUrl = await getImageValue("#admin-challenge-image-url", "#admin-challenge-image-file");
+    await update(ref(db), {
+      [`quiz/questions/${dateKey}`]: {
+        title,
+        text,
+        imageUrl,
+        type: "text",
+        firstPoints: FIRST_POINTS,
+        maxTries: MAX_TRIES,
+        open: true,
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.uid,
+      },
+      [`quiz/answers/${dateKey}`]: { keys: Object.fromEntries(keys.map((key) => [key, true])), display: answer },
+      ...(existing ? { [`quiz/attempts/${dateKey}`]: null, [`quiz/correct/${dateKey}`]: null, [`quiz/awards/${dateKey}`]: null } : {}),
+    });
+    event.target.reset();
+    $("#admin-challenge-date").value = todayKey();
+    setMessage(adminMessage, `${dateKey} 문제를 저장했습니다.`);
+  } catch (error) {
+    setMessage(adminMessage, error.message || authErrorMessage(error.code));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleChallengeDelete() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const dateKey = $("#admin-challenge-date").value || todayKey();
+  if (!confirm(`${dateKey} 문제를 삭제할까요? 학생 화면에서도 사라집니다. (이미 받은 포인트는 그대로)`)) return;
+  try {
+    await deleteQuestion(dateKey);
+    setMessage(adminMessage, "문제를 삭제했습니다.");
+  } catch (error) {
+    setMessage(adminMessage, error.message || authErrorMessage(error.code));
+  }
+}
+
+function deleteQuestion(qid) {
+  return update(ref(db), {
+    [`quiz/questions/${qid}`]: null,
+    [`quiz/answers/${qid}`]: null,
+    [`quiz/attempts/${qid}`]: null,
+    [`quiz/correct/${qid}`]: null,
+    [`quiz/awards/${qid}`]: null,
+  });
+}
+
+function subscribeAdminQuiz() {
+  unsubscribers.push(onValue(ref(db, "quiz/answers"), (snapshot) => {
+    adminQuizData.answers = snapshot.val() ?? {};
+    renderAdminQuestions();
+  }, () => {}));
+}
+
+function renderAdminQuestions() {
+  if (!currentUser || !isTeacher(currentProfile, currentUser)) return;
+  const list = $("#admin-question-list");
+  const openDetails = new Set([...list.querySelectorAll("details[open][data-qid]")].map((el) => el.dataset.qid));
+  list.innerHTML = quizQuestions.length
+    ? [...quizQuestions].reverse().map((question) => renderAdminQuestion(question, openDetails.has(question.id))).join("")
+    : `<p class="empty-text">아직 올린 문제가 없어요.</p>`;
+}
+
+function renderAdminQuestion(question, expanded) {
+  const qid = question.id;
+  const id = escapeAttribute(qid);
+  const answer = adminQuizData.answers[qid]?.display ?? "-";
+  const order = correctOrder(quizCorrect[qid], isHiddenUid);
+  const awards = adminQuizData.awards[qid] ?? {};
+  const attempts = adminQuizData.attempts[qid] ?? {};
+  const wrong = Object.entries(attempts)
+    .filter(([uid]) => !quizCorrect[qid]?.[uid] && !isHiddenUid(uid))
+    .map(([, row]) => row)
+    .sort((a, b) => Number(a.at ?? 0) - Number(b.at ?? 0));
+  const state = question.open ? "받는 중" : question.closedAt ? "마감" : "숨김";
+  const stateClass = question.open ? "pill-time" : "pill-off";
+  const openButton = question.open
+    ? `<button class="inline-danger-button" type="button" data-qaction="close" data-qid="${id}">마감하기</button>`
+    : `<button class="inline-action-button" type="button" data-qaction="open" data-qid="${id}">${question.closedAt ? "다시 받기" : "공개하기"}</button>`;
+  const revealButton = question.revealed
+    ? `<button class="inline-action-button is-on" type="button" data-qaction="hide-answer" data-qid="${id}">정답 숨기기</button>`
+    : `<button class="inline-action-button" type="button" data-qaction="reveal" data-qid="${id}">정답 공개</button>`;
+  return `
+    <article class="admin-question${question.open ? "" : " is-off"}">
+      <div class="quiz-head">
+        <span class="pill">${escapeHtml(qid)}</span>
+        <span class="pill ${stateClass}">${state}</span>
+      </div>
+      <p class="rank-name">${escapeHtml(question.title || question.text?.slice(0, 40) || "문제")}</p>
+      <p class="rank-meta">정답: <b>${escapeHtml(answer)}</b> · 맞힘 ${order.length}명 · 틀림 ${wrong.length}명</p>
+      <div class="admin-question-actions">${openButton}${revealButton}<button class="inline-danger-button" type="button" data-qaction="delete" data-qid="${id}">삭제</button></div>
+      <details data-qid="${id}"${expanded ? " open" : ""}>
+        <summary>맞힌 순서 · 낸 답 보기</summary>
+        <p class="quiz-text">${escapeHtml(question.text ?? "")}</p>
+        ${order.length ? `<ol class="admin-rank">${order.map((row) => {
+          const award = awards[row.uid];
+          return `<li><b>${row.rank}등</b> ${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${formatClock(row.at)} · ${award ? `+${formatNumber(award.points)}점${award.paid ? "" : " (지급 중)"}` : "포인트 받기 전"}</span></li>`;
+        }).join("")}</ol>` : `<p class="empty-text">아직 맞힌 학생이 없어요.</p>`}
+        ${wrong.length ? `<p class="rank-meta">틀린 학생 (정답 아직)</p><ul class="admin-wrong">${wrong.map((row) => `<li>${escapeHtml(row.name ?? "학생")} <span class="rank-meta">${Number(row.count ?? 0)}번 · 마지막 답 '${escapeHtml(row.raw ?? "-")}'</span></li>`).join("")}</ul>` : ""}
+      </details>
+    </article>`;
+}
+
+async function handleAdminQuestionClick(event) {
+  const button = event.target.closest("[data-qaction]");
+  if (!button || !isTeacher(currentProfile, currentUser)) return;
+  const qid = button.dataset.qid;
+  const question = questionById(qid);
+  if (!question) return;
+  const action = button.dataset.qaction;
+  try {
+    if (action === "open") {
+      await update(ref(db, `quiz/questions/${qid}`), { open: true, openedAt: serverTimestamp() });
+    } else if (action === "close") {
+      await update(ref(db, `quiz/questions/${qid}`), { open: false, closedAt: serverTimestamp() });
+    } else if (action === "reveal") {
+      const answer = adminQuizData.answers[qid]?.display;
+      if (!answer) return;
+      if (question.open && !confirm("아직 답을 받는 중이에요. 정답을 공개하면 마감하고 공개할게요.")) return;
+      await update(ref(db, `quiz/questions/${qid}`), { revealed: answer, open: false, ...(question.closedAt ? {} : { closedAt: serverTimestamp() }) });
+    } else if (action === "hide-answer") {
+      await update(ref(db, `quiz/questions/${qid}`), { revealed: null });
+    } else if (action === "delete") {
+      if (!confirm(`${qid} 문제를 지울까요? 정답 순서 기록도 지워져요. (이미 받은 포인트는 그대로예요)`)) return;
+      await deleteQuestion(qid);
+      setMessage(adminMessage, "문제를 지웠어요.");
+    }
+  } catch (error) {
+    setMessage(adminMessage, authErrorMessage(error.code));
+  }
+}
+
+function formatClock(ms) {
+  if (!ms) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(Number(ms)));
 }
 
 // ── 출석 체크 (월~금, 로그인하면 자동) ──────────────────────
@@ -587,22 +1013,13 @@ function renderAttendance() {
   const streak = alive ? Number(attendance.streak ?? 0) : 0;
   const teacher = isTeacher(currentProfile, currentUser);
 
-  $("#streak-count").textContent = streak;
-  $("#attendance-total").textContent = `누적 ${Number(attendance?.total ?? 0)}일`;
-  $("#attendance-title").textContent = teacher
-    ? "선생님은 출석 체크를 하지 않아요"
+  $("#attendance-line").textContent = teacher
+    ? ""
     : !schoolDay
-      ? "주말은 출석 쉬는 날이에요"
+      ? "주말은 출석 쉬는 날이에요."
       : checkedToday
-        ? `출석 완료! ${streak}일 연속`
+        ? `출석 완료 (+${ATTENDANCE_POINTS}점) · ${streak}일 연속 · 누적 ${Number(attendance?.total ?? 0)}일`
         : "출석 체크하는 중…";
-
-  const inCycle = streak === 0 ? 0 : ((streak - 1) % STREAK_BONUS_EVERY) + 1;
-  $("#streak-dots").innerHTML = Array.from({ length: STREAK_BONUS_EVERY }, (_, i) => {
-    const filled = i < inCycle;
-    const bonus = i === STREAK_BONUS_EVERY - 1;
-    return `<span class="streak-dot${filled ? " filled" : ""}${bonus ? " bonus" : ""}">${bonus ? "+30" : i + 1}</span>`;
-  }).join("");
 
   // 출석은 들어오면 자동으로 된다. 버튼은 자동 출석이 실패했을 때 다시 시도하는 용도로만 보인다.
   attendanceButton.hidden = teacher || !schoolDay || checkedToday || !attendanceFailed;
@@ -654,8 +1071,8 @@ async function checkIn(today) {
     try {
       await addMyPoints(ATTENDANCE_POINTS + bonus);
       showToast(bonus
-        ? `${streak}일 연속 출석! +${ATTENDANCE_POINTS}P, 보너스 +${bonus}P`
-        : `출석 완료! +${ATTENDANCE_POINTS}P`);
+        ? `${streak}일 연속 출석! +${ATTENDANCE_POINTS}점, 보너스 +${bonus}점`
+        : `출석 완료! +${ATTENDANCE_POINTS}점`);
       return;
     } catch (error) {
       await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
@@ -664,34 +1081,8 @@ async function checkIn(today) {
   showToast("출석은 됐지만 포인트 반영에 실패했어요. 선생님께 말씀해 주세요.");
 }
 
-function subscribeGameDaily() {
-  unsubscribers.push(onValue(ref(db,`users/${currentUser.uid}`),snapshot=>{
-    const p=snapshot.val()||{};
-    const mask=p.practiceEnd===academyEnd(academyDay(serverNow()))?p.practiceMask||0:0;
-    const used=[1,2,4,8,16].filter(bit=>mask&bit).length*10;
-    $('#daily-game-points').textContent=used;
-    $('#daily-game-fill').style.width=used*2+'%';
-  }));
-}
-
-// ── 두뇌 지수 ───────────────────────────────────────────────
-
-function subscribeBrain() {
-  unsubscribers.push(onValue(ref(db,`academy/history/${currentUser.uid}`),s=>{brainData=s.val()||{};renderBrain();}));
-  renderBrain();
-}
-
-// 홈의 두뇌 무게 카드: 두뇌교실과 같은 말랑그램 + 오각형 + 기준표.
-function renderBrain() {
-  const details = $("#brain-summary details");
-  const open = details?.open ?? false;
-  $("#brain-summary").innerHTML = brainSummary(brainData || {});
-  if (open) $("#brain-summary details").open = true;
-}
-
 function subscribePointsLeaderboard() {
   rankUnsubscribe?.();
-  rankCaption.textContent = "현재 포인트 순위";
   const studentsQuery = query(ref(db, "leaderboardUsers"), orderByChild("points"), limitToLast(40));
 
   rankUnsubscribe = onValue(studentsQuery, async (snapshot) => {
@@ -732,7 +1123,7 @@ function subscribePointsLeaderboard() {
           index,
           name: student.name,
           meta: student.todayResult && student.todayResult !== "-" ? student.todayResult : "",
-          value: `${formatNumber(student.points)}P`,
+          value: `${formatNumber(student.points)}점`,
           mine: student.uid === currentUser?.uid,
         })).join("")
       : `<p class="empty-text">아직 학생 기록이 없습니다.</p>`;
@@ -835,7 +1226,7 @@ function renderPurchaseHistoryItem(item) {
         <p class="rank-meta">${formatDateTime(item.createdAt)}</p>
       </div>
       <div class="history-actions">
-        <span class="rank-points">${item.refunded ? "+0" : `-${Number(item.price ?? 0)}`}P</span>
+        <span class="rank-points">${item.refunded ? "+0" : `-${Number(item.price ?? 0)}`}점</span>
         <span class="purchase-status ${status.cls}">${status.text}</span>
       </div>
     </article>
@@ -853,7 +1244,7 @@ function renderProductItem(product) {
     <article class="product-card${sale.open ? "" : " is-closed"}">
       ${image}
       <div class="product-body">
-        <div class="product-top">${pinnedLabel}${sale.label ? `<span class="pill ${sale.open ? "pill-time" : "pill-off"}">${escapeHtml(sale.label)}</span>` : ""}<span class="product-price">${formatNumber(Number(product.price ?? 0))}P</span></div>
+        <div class="product-top">${pinnedLabel}${sale.label ? `<span class="pill ${sale.open ? "pill-time" : "pill-off"}">${escapeHtml(sale.label)}</span>` : ""}<span class="product-price">${formatNumber(Number(product.price ?? 0))}점</span></div>
         <h3>${escapeHtml(product.title ?? "상품")}</h3>
         <p>${escapeHtml(product.description ?? "")}</p>
         <button type="button" data-product-id="${escapeAttribute(product.id)}">자세히 보기</button>
@@ -867,14 +1258,14 @@ function openProductDialog(product) {
   const price = Number(product.price ?? 0);
   const points = Number(currentProfile?.points ?? 0);
   renderImage(dialogProductImage, product.imageUrl);
-  dialogProductPrice.textContent = `${formatNumber(price)}P`;
+  dialogProductPrice.textContent = `${formatNumber(price)}점`;
   dialogProductTitle.textContent = product.title ?? "상품";
   dialogProductDescription.textContent = product.description ?? "";
-  dialogBalance.textContent = `현재 잔액 ${formatNumber(points)}P`;
-  dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(points - price)}P`;
+  dialogBalance.textContent = `현재 잔액 ${formatNumber(points)}점`;
+  dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(points - price)}점`;
   const sale = saleState(product);
   buyProductButton.disabled = !sale.open || points < price || isTeacher(currentProfile, currentUser);
-  buyProductButton.textContent = !sale.open ? `지금은 살 수 없어요 (${sale.label})` : points < price ? `${formatNumber(price - points)}P 더 모아야 해요` : "구매하기";
+  buyProductButton.textContent = !sale.open ? `지금은 살 수 없어요 (${sale.label})` : points < price ? `${formatNumber(price - points)}점 더 모아야 해요` : "구매하기";
   setMessage(purchaseMessage, sale.open
     ? `버튼을 누르면 바로 구매되고 포인트가 차감됩니다.${product.saleEndsAt ? ` 판매 마감 ${formatDateTime(product.saleEndsAt)}` : ""}`
     : "선생님이 판매를 멈췄거나 판매 시간이 끝났어요.");
@@ -933,9 +1324,9 @@ async function handlePurchase() {
         purchasedAt: serverTimestamp(),
       });
     }
-    setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${formatNumber(remaining)}P입니다.`);
-    dialogBalance.textContent = `현재 잔액 ${formatNumber(remaining)}P`;
-    dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(remaining)}P`;
+    setMessage(purchaseMessage, `구매되었습니다. 남은 잔액은 ${formatNumber(remaining)}점입니다.`);
+    dialogBalance.textContent = `현재 잔액 ${formatNumber(remaining)}점`;
+    dialogAfterBalance.textContent = `구매 후 잔액 ${formatNumber(remaining)}점`;
     selectedProduct = null;
     setTimeout(() => {
       productDialog.close();
@@ -961,6 +1352,7 @@ function subscribeAdminTools() {
   subscribeAdminProducts();
   subscribeAdminPurchases();
   subscribeAdminAttendance();
+  subscribeAdminQuiz();
 }
 
 function subscribeAdminStudents() {
@@ -1011,7 +1403,7 @@ function renderGrantStudentOptions() {
 
   grantStudentSelect.innerHTML = adminStudents.length
     ? `<option value="">학생을 선택하세요</option>${adminStudents.map((student) => {
-        const label = `${student.name ?? student.email ?? "학생"} (${Number(student.points ?? 0)}P)`;
+        const label = `${student.name ?? student.email ?? "학생"} (${Number(student.points ?? 0)}점)`;
         return `<option value="${escapeAttribute(student.id)}">${escapeHtml(label)}</option>`;
       }).join("")}`
     : `<option value="">학생이 없습니다</option>`;
@@ -1063,7 +1455,7 @@ function renderAdminProductItem(product) {
     <article class="admin-list-item admin-product-item${onSale && !ended ? "" : " is-off"}">
       <div>
         <p class="rank-name">${escapeHtml(product.title ?? "상품")}</p>
-        <p class="rank-meta">${Number(product.price ?? 0)}P · ${escapeHtml(status)}</p>
+        <p class="rank-meta">${Number(product.price ?? 0)}점 · ${escapeHtml(status)}</p>
         <div class="sale-ends-row">
           <input type="datetime-local" data-ends-input="${id}" value="${toLocalInput(product.saleEndsAt)}" aria-label="판매 마감 시각" />
           <button class="inline-action-button" type="button" data-ends-product-id="${id}">마감 시각 저장</button>
@@ -1162,7 +1554,7 @@ function renderAdminPurchaseItem(item) {
     <article class="admin-list-item${checked ? " admin-list-item-checked" : ""}${item.refunded ? " is-off" : ""}">
       <div>
         <p class="rank-name">${escapeHtml(buyer)} · ${escapeHtml(item.productTitle ?? "상품")}</p>
-        <p class="rank-meta">${Number(item.price ?? 0)}P · 구매 ${formatDateTime(item.createdAt)}${checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : ""} · <span class="purchase-status ${status.cls}">${status.text}</span></p>
+        <p class="rank-meta">${Number(item.price ?? 0)}점 · 구매 ${formatDateTime(item.createdAt)}${checked ? ` · 확인 ${formatDateTime(item.adminCheckedAt)}` : ""} · <span class="purchase-status ${status.cls}">${status.text}</span></p>
       </div>
       <div class="admin-product-actions">
         ${item.refunded ? "" : `<button class="inline-action-button${checked ? " is-on" : ""}" type="button" data-check-purchase-id="${id}" data-checked="${checked}">${checked ? "확인함 ✓" : "확인"}</button>
@@ -1193,14 +1585,14 @@ async function handleAdminRefund(purchaseId) {
     const purchase = (await get(purchaseRef)).val();
     if (!purchase || purchase.refunded) return;
     const price = Number(purchase.price ?? 0);
-    if (!confirm(`${purchase.studentName ?? "학생"}의 '${purchase.productTitle ?? "상품"}' 구매를 취소하고 ${price}P를 돌려줄까요?`)) return;
+    if (!confirm(`${purchase.studentName ?? "학생"}의 '${purchase.productTitle ?? "상품"}' 구매를 취소하고 ${price}점를 돌려줄까요?`)) return;
     // 먼저 취소 표시를 해 두 번 환불되지 않게 한다.
     const marked = await runTransaction(purchaseRef, (current) => (current && !current.refunded ? { ...current, refunded: true, refundedAt: Date.now(), refundedBy: currentUser.uid } : undefined));
     if (!marked.committed) return;
     const points = await runTransaction(ref(db, `users/${purchase.uid}/points`), (currentPoints) => Number(currentPoints ?? 0) + price);
     const student = (await get(ref(db, `users/${purchase.uid}`))).val();
     if (student) await syncLeaderboardProfile(purchase.uid, { ...student, points: points.snapshot.val() });
-    setMessage(adminMessage, `구매를 취소하고 ${price}P를 돌려줬어요.`);
+    setMessage(adminMessage, `구매를 취소하고 ${price}점를 돌려줬어요.`);
   } catch (error) {
     setMessage(adminMessage, error.message || "환불하지 못했습니다.");
   }
@@ -1281,8 +1673,8 @@ async function handlePointGrant(event) {
     pointGrantForm.reset();
     const name = student?.name ?? "학생";
     setMessage(adminMessage, applied > 0
-      ? `${name}에게 ${applied}P를 지급했습니다. (현재 ${total}P)`
-      : `${name}에게서 ${-applied}P를 차감했습니다. (현재 ${total}P)`);
+      ? `${name}에게 ${applied}점를 지급했습니다. (현재 ${total}점)`
+      : `${name}에게서 ${-applied}점를 차감했습니다. (현재 ${total}점)`);
   } catch (error) {
     setMessage(adminMessage, error.message || "포인트를 지급하지 못했습니다.");
   }
@@ -1459,6 +1851,10 @@ function authErrorMessage(code) {
   if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") return "아이디 또는 비밀번호를 확인해주세요.";
   if (code === "auth/user-disabled") return "사용이 중지된 계정입니다. Firebase 콘솔에서 확인해주세요.";
   if (code === "auth/network-request-failed") return "인터넷 연결을 확인해주세요.";
+  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return "구글 로그인 창이 닫혔어요. 다시 눌러 주세요.";
+  if (code === "auth/operation-not-allowed") return "아직 구글 로그인이 켜져 있지 않아요. 선생님께 말해 주세요.";
+  if (code === "auth/account-exists-with-different-credential") return "예전 계정이 아직 구글과 연결되지 않았어요. 선생님께 '구글 로그인 열기'를 부탁한 뒤 다시 눌러 주세요.";
+  if (code === "auth/requires-recent-login") return "다시 로그인한 뒤에 해 주세요.";
   if (code === "auth/unauthorized-domain") return "Firebase Authentication 승인 도메인에 kdynt17.github.io를 추가해주세요.";
   if (code === "auth/weak-password") return "비밀번호는 6자 이상이어야 합니다.";
   if (code === "auth/missing-email") return "가입한 이메일을 입력해주세요.";
@@ -1472,8 +1868,12 @@ function clearSubscriptions() {
   unsubscribers = [];
   rankUnsubscribe?.();
   rankUnsubscribe = null;
-  brainMount?.();
-  brainMount = null;
+  Object.values(quizUnsubs).forEach((unsubscribe) => unsubscribe());
+  quizUnsubs = {};
+  quizQuestions = [];
+  for (const store of [quizCorrect, quizMine, quizAwards]) Object.keys(store).forEach((key) => delete store[key]);
+  quizAwarding.clear();
+  adminQuizData = { answers: {}, attempts: {}, awards: {} };
 }
 
 function setMessage(element, message) {
