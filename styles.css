@@ -1,42 +1,46 @@
 /* 아침 챌린지 — 하루 한 문제 앱.
-   방향: 따뜻한 미색 바탕 + 거의 검정 잉크 + 라임 하나. 학교 파랑·회사 남색·게임 네온 없이, 폰에서 매일 여는 도구처럼.
+   방향: 연보라 바탕 + 진보라 버튼 + 피치 포인트. 회색 대신 바탕·카드·선에 모두 보랏빛을 살짝 넣는다.
    글꼴은 Pretendard 하나, 색은 모두 :root 토큰으로만 쓴다. 움직임은 상태가 바뀔 때만 150~200ms. */
 
 :root {
   color-scheme: light;
 
-  --bg: #f5f4ef;
-  --surface: #fffefb;
-  --surface-2: #efeee8;
-  --ink: #17181a;
-  --ink-2: #45484d;
-  --ink-3: #686c73;
-  --line: #e2e0d7;
-  --line-strong: #cfccc1;
+  --bg: #f1ecff;
+  --surface: #fcfaff;
+  --surface-2: #e6ddff;
+  --ink: #1f1a33;
+  --ink-2: #463f5e;
+  --ink-3: #655d7f;
+  --line: #e0d8f7;
+  --line-strong: #cbc0ec;
 
-  --accent: #c8f25a;
-  --accent-soft: #eefbd0;
-  --accent-ink: #17181a;
+  --primary: #5b3fd9;
+  --primary-hover: #4a31bd;
+  --on-primary: #fcfaff;
+  --primary-soft: #e4dcff;
+  --accent: #ffb59a;
+  --accent-soft: #ffe5da;
+  --accent-ink: #1f1a33;
 
-  --ok: #1d7044;
-  --ok-bg: #e3f3e9;
+  --ok: #4a31bd;
+  --ok-bg: #e4dcff;
   --warn: #8a5a00;
   --warn-bg: #fdf1d6;
   --danger: #c4321f;
   --danger-bg: #fbe9e6;
-  --info-bg: #ecebe4;
+  --info-bg: #e6ddff;
 
   --gold: #e7b52c;
   --silver: #b9bcc2;
   --bronze: #d08b57;
 
-  --on-ink: #fbfbf7;
-  --ink-hover: #2b2d31;
-  --surface-hover: #fbfaf7;
-  --ring: rgba(23, 24, 26, 0.08);
-  --scrim: rgba(23, 24, 26, 0.42);
-  --focus: #3b6ef5;
-  --selection: #e4f7b0;
+  --on-ink: #fcfaff;
+  --ink-hover: #2e2748;
+  --surface-hover: #f7f3ff;
+  --ring: rgba(91, 63, 217, 0.16);
+  --scrim: rgba(31, 26, 51, 0.45);
+  --focus: #5b3fd9;
+  --selection: #ddd2ff;
 
   --font: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
 
@@ -45,8 +49,8 @@
   --r-lg: 20px;
   --r-pill: 999px;
 
-  --shadow-1: 0 1px 2px rgba(23, 24, 26, 0.05), 0 4px 14px rgba(23, 24, 26, 0.05);
-  --shadow-2: 0 2px 6px rgba(23, 24, 26, 0.06), 0 16px 40px rgba(23, 24, 26, 0.12);
+  --shadow-1: 0 1px 2px rgba(64, 40, 140, 0.06), 0 4px 14px rgba(64, 40, 140, 0.07);
+  --shadow-2: 0 2px 6px rgba(64, 40, 140, 0.08), 0 16px 40px rgba(64, 40, 140, 0.16);
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --t-fast: 150ms;
@@ -196,12 +200,12 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--ink);
+  border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--ring);
 }
 
 input[type="file"] { padding: 12px 12px; min-height: 0; }
-input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; accent-color: var(--ink); }
+input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; accent-color: var(--primary); }
 
 .checkbox-label {
   display: flex !important;
@@ -231,12 +235,12 @@ input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; accent-color:
 }
 
 .primary-button {
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--on-ink);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
 }
 
-.primary-button:hover:not(:disabled) { background: var(--ink-hover); }
+.primary-button:hover:not(:disabled) { border-color: var(--primary-hover); background: var(--primary-hover); }
 
 .secondary-button {
   border: 1px solid var(--line-strong);
@@ -545,7 +549,7 @@ body.is-teacher .header-points { display: none; }
 .pill.is-done { background: var(--ok-bg); color: var(--ok); }
 .pill.is-closed,
 .pill-off { background: var(--danger-bg); color: var(--danger); }
-.pill-time { background: var(--accent-soft); color: var(--ink); }
+.pill-time { background: var(--primary-soft); color: var(--primary-hover); }
 .pill-hot { background: var(--warn-bg); color: var(--warn); }
 
 /* ── 순위 줄 ── */
@@ -589,7 +593,7 @@ body.is-teacher .header-points { display: none; }
 .rank-2 .rank-number { background: var(--silver); color: var(--ink); }
 .rank-3 .rank-number { background: var(--bronze); color: var(--ink); }
 
-.rank-mine { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.rank-mine { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
 .profile-card .rank-mine { background: var(--accent-soft); box-shadow: none; }
 
 .rank-body { min-width: 0; }
