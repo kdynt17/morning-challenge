@@ -1,4 +1,4 @@
-import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-classic";
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-pwlogin";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -6,13 +6,11 @@ import {
   GoogleAuthProvider,
   indexedDBLocalPersistence,
   initializeAuth,
-  linkWithPopup,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
   signOut,
-  unlink,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   get,
@@ -140,11 +138,6 @@ if (setupRequired) {
   loginForm.addEventListener("submit", handleLogin);
   $("#google-login-button").addEventListener("click", handleGoogleLogin);
   $("#pending-relogin-button").addEventListener("click", handleGoogleLogin);
-  $("#google-link-button").addEventListener("click", handleGoogleLink);
-  $("#teacher-login-toggle").addEventListener("click", () => {
-    loginForm.hidden = !loginForm.hidden;
-    if (!loginForm.hidden) $("#login-email").focus();
-  });
   $("#answer-form").addEventListener("submit", handleAnswerSubmit);
   $("#challenge-form").addEventListener("submit", handleChallengeSave);
   $("#delete-challenge-button").addEventListener("click", handleChallengeDelete);
@@ -282,7 +275,7 @@ function showPendingApproval(profile) {
     : `${profile?.name ?? "학생"} 님(${profile?.authEmail ?? ""})의 로그인이 접수됐어요. 선생님이 예전 기록과 연결(또는 승인)하면 이 화면이 자동으로 넘어가요.`;
 }
 
-// ── 로그인 (학생: 학교 구글 계정, 선생님: 아이디·비밀번호) ───────────
+// ── 로그인 (기본: 아이디·비밀번호, 못 들어오는 학생: 학교 구글 계정) ───────────
 
 function schoolGoogleProvider() {
   const provider = new GoogleAuthProvider();
@@ -322,44 +315,11 @@ async function handleLogin(event) {
   }
 }
 
-// 예전(비밀번호) 계정으로 들어와 있는 학생이 스스로 학교 구글 계정을 붙인다. 계정이 그대로라 기록도 그대로다.
-async function handleGoogleLink() {
-  const button = $("#google-link-button");
-  button.disabled = true;
-  try {
-    const result = await linkWithPopup(currentUser, schoolGoogleProvider());
-    const googleEmail = googleEmailOf(result.user);
-    if (!isSchoolEmail(googleEmail)) {
-      await unlink(currentUser, "google.com").catch(() => {});
-      showToast(`${googleEmail ?? "이 계정"} 은(는) 학교 계정이 아니에요. 학번@${SCHOOL_EMAIL_DOMAIN} 계정을 골라 주세요.`);
-      return;
-    }
-    // 이제 구글로만 들어오므로 예전 비밀번호는 지운다.
-    if (currentUser.providerData.some((info) => info.providerId === "password")) {
-      await unlink(currentUser, "password").catch(() => {});
-    }
-    await update(ref(db, `users/${currentUser.uid}`), { googleEmail, loginProvider: "google", googleLinkedAt: serverTimestamp() }).catch(() => {});
-    showToast("학교 구글 계정을 연결했어요! 다음부터 구글로 로그인해요.");
-    renderGoogleLink();
-  } catch (error) {
-    if (error.code === "auth/credential-already-in-use") {
-      showToast("그 구글 계정으로 따로 로그인한 적이 있어요. 선생님께 '예전 기록 연결'을 부탁해 주세요.");
-    } else if (error.code === "auth/provider-already-linked") {
-      renderGoogleLink();
-    } else {
-      showToast(authErrorMessage(error.code));
-    }
-  } finally {
-    button.disabled = false;
-  }
-}
-
 function renderGoogleLink() {
   if (!currentUser) return;
   const teacher = isTeacher(currentProfile, currentUser);
   const googleEmail = googleEmailOf(currentUser);
-  $("#google-link-card").hidden = teacher || Boolean(googleEmail);
-  $("#profile-login").textContent = teacher ? "선생님 아이디" : googleEmail ? `학교 구글 (${googleEmail})` : "예전 비밀번호 (구글 연결 필요)";
+  $("#profile-login").textContent = teacher ? "선생님 아이디" : googleEmail ? `학교 구글 (${googleEmail})` : "아이디·비밀번호";
 }
 
 async function ensureProfile(user) {
@@ -1794,6 +1754,8 @@ function normalizeLoginEmail(value) {
   const login = String(value ?? "").trim();
   const lower = login.toLowerCase();
   if (lower === ADMIN_LOGIN || lower === "admin" || lower === ADMIN_AUTH_EMAIL) return ADMIN_AUTH_EMAIL;
+  // 학번만 적으면 학교 메일 주소로 로그인한다.
+  if (/^\d{5,12}$/.test(login)) return `${login}@${SCHOOL_EMAIL_DOMAIN}`;
   return login;
 }
 

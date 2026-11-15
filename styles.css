@@ -701,13 +701,10 @@ label {
 .splash-screen p { margin: 0; color: var(--muted); }
 .google-login-button { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; }
 .google-login-button svg { flex: none; padding: 2px; border-radius: 50%; background: #fff; }
-.auth-card #login-form[hidden] { display: none; }
 .text-button { background: transparent; color: var(--muted); text-decoration: underline; }
 .attendance-line { margin: 0; color: var(--muted); font-size: 14px; font-weight: 700; }
 .attendance-line:empty { display: none; }
-.google-link-card { border-color: var(--blue); background: #eef4ff; }
-.google-link-card h2 { margin: 0; font-size: 19px; }
-.google-link-card p { margin: 0; color: var(--muted); }
+.google-help { display: grid; gap: 10px; margin-top: 6px; padding-top: 16px; border-top: 1px solid var(--line); }
 .revealed-answer { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff7d6; font-weight: 800; }
 .pill.is-done { background: #e6f6f1; color: var(--green); }
 .pill.is-closed, .pill-off { background: #fdecea; color: var(--red); }
