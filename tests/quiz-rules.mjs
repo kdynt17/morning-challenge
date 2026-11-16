@@ -101,6 +101,7 @@ await teacher.ref().update({ "users/g1/status": "linked", "users/g1/linkedTo": "
 const report = (extra) => ({ uid: "bob", name: "밥", type: "abuse", speakers: ["에이미"], targets: ["나", "주변 사람들"], date: "2026-11-16", when: "쉬는 시간", where: "우리 반 교실", kinds: ["욕설"], text: "지나가면서 욕했어요", feelings: ["화가 났다"], level: 4, responses: ["자리를 피했다"], createdAt: T, ...extra });
 await bob.ref("reports/r1").set(report());
 await bob.ref("reports/r2").set({ uid: "bob", name: "밥", type: "intrusion", createdAt: T });
+await bob.ref("reports/r1b").set({ uid: "bob", name: "밥", type: "abuse", people: ["에이미", "이브"], date: "2026-11-16", text: "점심시간에 에이미가 이브에게 욕했어요", createdAt: T });
 await assert.rejects(bob.ref("reports/r3").set(report({ name: "에이미" })));
 await assert.rejects(bob.ref("reports/r4").set(report({ uid: "amy" })));
 await assert.rejects(bob.ref("reports/r5").set(report({ createdAt: Date.now() - 600000 })));
@@ -114,7 +115,7 @@ await assert.rejects(eve.ref("reports/r10").set({ uid: "eve", name: "이브", ty
 await assert.rejects(bob.ref("reports/r1/text").set("고쳐 쓰기"));
 await assert.rejects(bob.ref("reports").get());
 await assert.rejects(bob.ref("reports/r1").get());
-assert.equal((await teacher.ref("reports").get()).numChildren(), 2);
+assert.equal((await teacher.ref("reports").get()).numChildren(), 3);
 await teacher.ref("reports/r1").update({ status: "done", doneAt: Date.now() });
 await assert.rejects(teacher.ref("reports/r1").update({ type: "intrusion" }));
 await teacher.ref("reports/r2").remove();
