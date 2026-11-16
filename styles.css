@@ -942,6 +942,49 @@ body.is-teacher .header-points { display: none; }
 
 #abuse-text { min-height: 120px; }
 
+.report-choice { display: grid; gap: 12px; }
+
+.report-choice-button {
+  display: grid;
+  gap: 4px;
+  min-height: 112px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+
+.report-choice-button:hover { border-color: var(--primary); }
+.report-choice-button:active { transform: scale(0.99); }
+.choice-title { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.choice-sub { color: var(--ink-3); font-size: 15px; }
+.report-choice-button.is-urgent { border-color: var(--danger-bg); background: var(--danger-bg); }
+.report-choice-button.is-urgent .choice-title { color: var(--danger); }
+.report-choice-button.is-urgent:hover { border-color: var(--danger); }
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  min-height: 36px;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.back-link svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.back-link:hover { color: var(--ink); }
+
+.date-only { width: auto; min-width: 180px; justify-self: start; }
+
 /* 선생님 신고 대시보드 */
 .report-summary { display: grid; gap: 12px; }
 
