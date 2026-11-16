@@ -224,6 +224,40 @@
         }
       }
     },
+    "reports": {
+      ".read": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+      ".indexOn": [
+        "createdAt"
+      ],
+      "$reportId": {
+        ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved')) || (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher'))",
+        ".validate": "newData.hasChildren(['uid', 'name', 'type', 'createdAt']) && (newData.child('type').val() == 'intrusion' || newData.child('type').val() == 'abuse') && newData.child('name').isString() && newData.child('name').val().length <= 40 && (data.exists() ? newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('uid').val() == data.child('uid').val() && newData.child('type').val() == data.child('type').val() : newData.child('createdAt').val() == now && newData.child('name').val() == root.child('users').child(auth.uid).child('name').val() && !newData.child('status').exists())",
+        "text": {
+          ".validate": "newData.isString() && newData.val().length <= 1000"
+        },
+        "categories": {
+          ".validate": "newData.hasChildren()",
+          "$i": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 40"
+          }
+        },
+        "people": {
+          ".validate": "newData.hasChildren()",
+          "$i": {
+            ".validate": "newData.isString() && newData.val().length <= 30"
+          }
+        },
+        "status": {
+          ".validate": "newData.val() == 'done'"
+        },
+        "doneAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": "$other == 'uid' || $other == 'name' || $other == 'type' || $other == 'createdAt'"
+        }
+      }
+    },
     "settings": {
       ".read": "auth != null",
       "gamesLocked": {
@@ -237,6 +271,17 @@
       "storeClosed": {
         ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
         ".validate": "newData.isBoolean()"
+      },
+      "reportCategories": {
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+        ".validate": "newData.hasChildren()",
+        "$i": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        }
+      },
+      "alertTopic": {
+        ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+        ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{16,64}$/)"
       }
     }
   }

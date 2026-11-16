@@ -15,8 +15,8 @@
     <meta name="apple-mobile-web-app-title" content="아침 챌린지" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-    <link rel="stylesheet" href="styles.css?v=20261115-lavender" />
-    <script type="module" src="app.js?v=20261115-lavender"></script>
+    <link rel="stylesheet" href="styles.css?v=20261116-report" />
+    <script type="module" src="app.js?v=20261116-report"></script>
   </head>
   <body>
     <main>
@@ -101,6 +101,43 @@
           </article>
         </section>
 
+        <!-- 신고 -->
+        <section id="report-page" class="page" data-page="report">
+          <article class="question-card report-card report-urgent">
+            <h2>우리 반에 지금 누가 침입했나요?</h2>
+            <p class="helper-text no-margin">누르면 선생님께 바로 알림이 가요. 장난으로 누르지 않아요.</p>
+            <button id="intrusion-button" class="danger-button strong-danger" type="button">예, 지금 선생님께 알리기</button>
+            <p id="intrusion-message" class="report-message" role="status"></p>
+          </article>
+
+          <article class="question-card report-card">
+            <h2>욕설·괴롭힘 신고</h2>
+            <p class="helper-text no-margin">선생님만 볼 수 있어요. 본 것, 들은 것, 당한 것 모두 신고할 수 있어요.</p>
+            <form id="abuse-form" class="report-form">
+              <fieldset class="report-step">
+                <legend><span class="step-no">1</span>어떤 일이었나요? <small>여러 개 골라도 돼요</small></legend>
+                <div id="abuse-categories" class="category-grid"></div>
+              </fieldset>
+              <fieldset class="report-step">
+                <legend><span class="step-no">2</span>관련된 친구를 모두 골라 주세요 <small>한 사람, 당한 사람 모두</small></legend>
+                <div id="people-chips" class="people-chips"></div>
+                <div class="people-input-wrap">
+                  <input id="people-input" type="text" autocomplete="off" placeholder="이름을 쓰면 아래에 나와요" aria-describedby="people-help" />
+                  <ul id="people-suggestions" class="people-suggestions" role="listbox" hidden></ul>
+                </div>
+                <p id="people-help" class="helper-text no-margin">이름을 눌러 추가해요. 목록에 없으면 이름을 다 쓰고 Enter를 눌러요.</p>
+              </fieldset>
+              <fieldset class="report-step">
+                <legend><span class="step-no">3</span>언제, 누가, 누구에게, 뭐라고 했나요?</legend>
+                <textarea id="abuse-text" rows="4" maxlength="1000" placeholder="예: 11월 16일 점심시간에 교실에서 ○○가 △△에게 &quot;…&quot;라고 했어요."></textarea>
+              </fieldset>
+              <button id="abuse-submit" class="primary-button" type="submit">신고하기</button>
+              <p id="abuse-message" class="report-message" role="status"></p>
+            </form>
+          </article>
+        </section>
+
+        <!-- 순위 -->
         <section id="leaderboard-page" class="page" data-page="leaderboard">
           <div id="leaderboard-list" class="rank-list"><p class="empty-text">순위를 불러오고 있어요.</p></div>
         </section>
@@ -130,6 +167,42 @@
 
         <section id="admin-page" class="page" data-page="admin">
           <a class="secondary-button link-button" href="developer/">가입자 관리 · 구글 연결 페이지 열기</a>
+          <article class="admin-card">
+            <h3>신고</h3>
+            <div class="report-summary" id="report-summary"><p class="empty-text">신고를 불러오고 있어요.</p></div>
+            <div class="report-filter" role="group" aria-label="신고 보기">
+              <button type="button" class="inline-action-button is-on" data-report-filter="open">처리 전</button>
+              <button type="button" class="inline-action-button" data-report-filter="all">전체</button>
+            </div>
+            <div id="admin-report-list" class="admin-list scroll-list"></div>
+          </article>
+          <article class="admin-card">
+            <h3>신고 알림 받기</h3>
+            <p id="notify-status" class="helper-text no-margin">이 화면을 열어 두면 신고가 들어올 때 소리와 알림이 와요.</p>
+            <button id="notify-enable" class="secondary-button" type="button">이 기기에서 알림 켜기</button>
+            <details class="ntfy-box">
+              <summary>앱을 닫아 둬도 휴대폰으로 받기 (ntfy, 무료)</summary>
+              <ol class="ntfy-steps">
+                <li>휴대폰에 <b>ntfy</b> 앱을 설치해요(앱스토어·플레이스토어).</li>
+                <li>앱에서 + 를 누르고 아래 <b>알림 주소</b>를 그대로 넣어 구독해요.</li>
+                <li>아래 '테스트 알림'으로 잘 오는지 확인해요.</li>
+              </ol>
+              <p class="helper-text no-margin">알림에는 "신고가 들어왔어요"만 가고 학생 이름·내용은 보내지 않아요. 알림 주소는 남에게 알려 주지 마세요.</p>
+              <p class="ntfy-topic"><span>알림 주소</span><code id="ntfy-topic">아직 없어요</code></p>
+              <div class="admin-question-actions">
+                <button id="ntfy-create" class="inline-action-button" type="button">알림 주소 만들기</button>
+                <button id="ntfy-test" class="inline-action-button" type="button">테스트 알림</button>
+              </div>
+            </details>
+          </article>
+          <article class="admin-card">
+            <h3>욕설 신고 항목</h3>
+            <p class="helper-text no-margin">한 줄에 하나씩 적으면 학생 화면에 1번부터 버튼으로 나와요(최대 40개). 비워 두면 '1번'~'28번'만 보여요.</p>
+            <form id="category-form" class="stack-form">
+              <textarea id="category-text" rows="8" placeholder="예:&#10;외모 놀리기&#10;부모님 욕&#10;…"></textarea>
+              <button class="primary-button" type="submit">항목 저장</button>
+            </form>
+          </article>
           <article class="admin-card">
             <h3>오늘 문제 올리기</h3>
             <form id="challenge-form" class="stack-form">
@@ -202,6 +275,7 @@
           <button class="active" type="button" data-target-page="home" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16M4 12h10M4 17.5h7"/><path d="m15.5 17 2 2 3.5-4"/></svg><span>문제</span></button>
           <button type="button" data-target-page="leaderboard" data-nav="leaderboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6"/></svg><span>순위</span></button>
           <button type="button" data-target-page="store" data-nav="store"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.2 11.2a1 1 0 0 1-1 .8H7.2a1 1 0 0 1-1-.8z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg><span>상점</span></button>
+          <button id="report-nav-button" type="button" data-target-page="report" data-nav="report"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 21 19H3z"/><path d="M12 10v4"/><path d="M12 16.6v.4"/></svg><span>신고</span></button>
           <button type="button" data-target-page="profile" data-nav="profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c1.2-3.6 4-5 7-5s5.8 1.4 7 5"/></svg><span>내 정보</span></button>
           <button id="admin-nav-button" type="button" data-target-page="admin" data-nav="admin" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>관리</span></button>
         </nav>

@@ -1,4 +1,4 @@
-import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261115-lavender";
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261116-report";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -90,6 +90,7 @@ const pageNames = {
   home: "오늘의 문제",
   leaderboard: "순위",
   store: "포인트 상점",
+  report: "신고",
   profile: "내 정보",
   admin: "선생님 관리",
 };
@@ -143,6 +144,24 @@ if (setupRequired) {
   $("#delete-challenge-button").addEventListener("click", handleChallengeDelete);
   $("#admin-challenge-date").value = todayKey();
   $("#admin-question-list").addEventListener("click", handleAdminQuestionClick);
+  $("#intrusion-button").addEventListener("click", handleIntrusion);
+  $("#abuse-form").addEventListener("submit", handleAbuseSubmit);
+  $("#abuse-categories").addEventListener("click", handleCategoryClick);
+  $("#people-input").addEventListener("keydown", handlePeopleKey);
+  $("#people-input").addEventListener("input", renderPeopleSuggestions);
+  $("#people-input").addEventListener("focus", async (event) => {
+    // 휴대폰 자판이 이름 목록을 가리지 않게 입력 칸을 화면 가운데로 올린다.
+    setTimeout(() => event.target.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+    await loadStudentNames();
+    renderPeopleSuggestions();
+  });
+  $("#people-input").addEventListener("blur", () => setTimeout(renderPeopleSuggestions, 150));
+  $("#report-page").addEventListener("click", handlePeopleClick);
+  $("#admin-page").addEventListener("click", handleAdminReportClick);
+  $("#category-form").addEventListener("submit", handleCategorySave);
+  $("#ntfy-create").addEventListener("click", handleNtfyCreate);
+  $("#ntfy-test").addEventListener("click", handleNtfyTest);
+  $("#notify-enable").addEventListener("click", handleNotifyEnable);
   $("#logout-button").addEventListener("click", () => signOut(auth));
   $("#pending-logout-button").addEventListener("click", () => signOut(auth));
   productForm.addEventListener("submit", handleProductSave);
@@ -217,7 +236,7 @@ if (setupRequired) {
     // ?page=store 처럼 들어오면 그 화면을 연다(예전 두뇌교실 주소 ?page=games 는 문제 화면으로).
     const params = new URLSearchParams(location.search);
     const requestedPage = params.get("page");
-    enterApp(["leaderboard", "store", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
+    enterApp(["leaderboard", "store", "report", "profile", "admin"].includes(requestedPage) ? requestedPage : "home");
   });
 }
 
@@ -230,6 +249,7 @@ function enterApp(page = "home") {
   subscribeProfile();
   subscribeAttendance();
   subscribeQuiz();
+  subscribeReportSettings();
   subscribePointsLeaderboard();
   subscribeStore();
   subscribePurchaseHistory();
@@ -393,6 +413,7 @@ function renderProfile(user, profile) {
   $("#profile-role").textContent = teacher ? "선생님" : "학생";
   profileMessage.textContent = teacher ? "선생님 계정이에요. 오늘 문제와 정답자는 관리에서 볼 수 있어요." : `${name} 님, ${greetingByHour()}`;
   adminNavButton.hidden = !teacher;
+  $("#report-nav-button").hidden = teacher;
   renderGoogleLink();
   document.body.classList.toggle("is-teacher", teacher);
   renderAttendance();
@@ -930,6 +951,414 @@ function formatClock(ms) {
   return new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(Number(ms)));
 }
 
+// ── 신고 (침입 알림 · 욕설 신고) ─────────────────────────────
+// 신고는 선생님만 읽는다(reports). 침입 신고는 선생님 화면에 소리·알림을 띄우고,
+// 선생님이 ntfy 알림 주소를 만들어 두었으면 휴대폰에도 "신고가 들어왔어요"만 보낸다(이름·내용은 안 보냄).
+
+const DEFAULT_CATEGORY_COUNT = 28;
+const REPORT_COOLDOWN_MS = 60000;
+let reportCategories = [];
+let alertTopic = "";
+let studentNames = [];
+let selectedPeople = [];
+let selectedCategories = new Set();
+let lastReportAt = { intrusion: 0, abuse: 0 };
+let adminReports = [];
+let reportFilter = "open";
+let reportsSeen = null;
+let reportsLoadedAt = 0;
+
+function subscribeReportSettings() {
+  unsubscribers.push(onValue(ref(db, "settings/reportCategories"), (snapshot) => {
+    const value = snapshot.val();
+    reportCategories = (Array.isArray(value) ? value : Object.values(value ?? {})).map((item) => String(item ?? "").trim()).filter(Boolean);
+    renderCategoryButtons();
+    if (isTeacher(currentProfile, currentUser) && document.activeElement !== $("#category-text")) {
+      $("#category-text").value = reportCategories.join("\n");
+    }
+  }, () => {}));
+  unsubscribers.push(onValue(ref(db, "settings/alertTopic"), (snapshot) => {
+    alertTopic = typeof snapshot.val() === "string" ? snapshot.val() : "";
+    renderNtfyTopic();
+  }, () => {}));
+}
+
+function categoryLabels() {
+  return reportCategories.length
+    ? reportCategories
+    : Array.from({ length: DEFAULT_CATEGORY_COUNT }, (_, index) => "");
+}
+
+function renderCategoryButtons() {
+  const root = $("#abuse-categories");
+  if (!root) return;
+  root.innerHTML = categoryLabels().map((label, index) => {
+    const no = index + 1;
+    const on = selectedCategories.has(no);
+    return `<button type="button" class="category-button${on ? " is-on" : ""}" data-category="${no}" aria-pressed="${on}"><span class="category-no">${no}</span>${label ? `<span class="category-label">${escapeHtml(label)}</span>` : ""}</button>`;
+  }).join("");
+}
+
+function handleCategoryClick(event) {
+  const button = event.target.closest("[data-category]");
+  if (!button) return;
+  const no = Number(button.dataset.category);
+  if (selectedCategories.has(no)) selectedCategories.delete(no);
+  else selectedCategories.add(no);
+  button.classList.toggle("is-on", selectedCategories.has(no));
+  button.setAttribute("aria-pressed", String(selectedCategories.has(no)));
+}
+
+// 우리 반 이름 목록(순위표에 있는 승인된 학생)으로 자동완성
+async function loadStudentNames() {
+  if (studentNames.length) return;
+  try {
+    const snapshot = await get(ref(db, "leaderboardUsers"));
+    const names = new Set();
+    snapshot.forEach((child) => {
+      const name = String(child.val()?.name ?? "").trim();
+      if (name && !isHiddenUid(child.key)) names.add(name);
+    });
+    studentNames = [...names].sort((a, b) => a.localeCompare(b, "ko-KR"));
+  } catch (error) {
+    studentNames = [];
+  }
+}
+
+function renderPeopleChips() {
+  $("#people-chips").innerHTML = selectedPeople.map((name, index) => `
+    <span class="person-chip">${escapeHtml(name)}<button type="button" data-remove-person="${index}" aria-label="${escapeAttribute(name)} 빼기">×</button></span>`).join("");
+}
+
+function addPerson(name) {
+  const clean = String(name ?? "").trim().slice(0, 30);
+  if (!clean || selectedPeople.includes(clean) || selectedPeople.length >= 30) return;
+  selectedPeople.push(clean);
+  renderPeopleChips();
+}
+
+function renderPeopleSuggestions() {
+  const input = $("#people-input");
+  const list = $("#people-suggestions");
+  const keyword = input.value.trim();
+  const matches = studentNames
+    .filter((name) => !selectedPeople.includes(name) && (!keyword || name.includes(keyword)))
+    .slice(0, keyword ? 8 : 40);
+  if (!matches.length || document.activeElement !== input) {
+    list.hidden = true;
+    return;
+  }
+  list.innerHTML = matches.map((name) => `<li role="option"><button type="button" data-add-person="${escapeAttribute(name)}">${escapeHtml(name)}</button></li>`).join("");
+  list.hidden = false;
+}
+
+function handlePeopleKey(event) {
+  if (event.key !== "Enter" && event.key !== ",") return;
+  event.preventDefault();
+  const input = event.target;
+  const keyword = input.value.replace(/,/g, "").trim();
+  if (!keyword) return;
+  // 이름 일부만 쳤고 목록에 딱 하나 맞으면 그 이름을 넣는다.
+  const matches = studentNames.filter((name) => name.includes(keyword) && !selectedPeople.includes(name));
+  addPerson(matches.length === 1 ? matches[0] : keyword);
+  input.value = "";
+  renderPeopleSuggestions();
+}
+
+function handlePeopleClick(event) {
+  const add = event.target.closest("[data-add-person]");
+  if (add) {
+    addPerson(add.dataset.addPerson);
+    $("#people-input").value = "";
+    $("#people-input").focus();
+    renderPeopleSuggestions();
+    return;
+  }
+  const remove = event.target.closest("[data-remove-person]");
+  if (remove) {
+    selectedPeople.splice(Number(remove.dataset.removePerson), 1);
+    renderPeopleChips();
+  }
+}
+
+async function sendPhoneAlert(title, message, urgent) {
+  if (!alertTopic) return false;
+  try {
+    // text/plain JSON이라 브라우저가 미리 묻는 요청(preflight) 없이 바로 보낸다.
+    const response = await fetch("https://ntfy.sh/", {
+      method: "POST",
+      body: JSON.stringify({ topic: alertTopic, title, message, priority: urgent ? 5 : 3, tags: [urgent ? "rotating_light" : "speech_balloon"] }),
+    });
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function handleIntrusion() {
+  const message = $("#intrusion-message");
+  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
+  if (Date.now() - lastReportAt.intrusion < REPORT_COOLDOWN_MS) {
+    setMessage(message, "방금 알렸어요. 선생님이 확인하고 있어요.");
+    return;
+  }
+  if (!confirm("우리 반에 지금 누가 침입했다고 선생님께 바로 알릴까요?")) return;
+  const button = $("#intrusion-button");
+  button.disabled = true;
+  try {
+    await set(push(ref(db, "reports")), {
+      uid: currentUser.uid,
+      name: currentProfile?.name ?? "",
+      type: "intrusion",
+      createdAt: serverTimestamp(),
+    });
+    lastReportAt.intrusion = Date.now();
+    void sendPhoneAlert("침입 신고", `우리 반 침입 신고가 들어왔어요 (${formatClock(serverNow())}). 앱에서 확인해 주세요.`, true);
+    setMessage(message, "선생님께 알렸어요. 안전한 곳에 있어요.");
+  } catch (error) {
+    setMessage(message, "알리지 못했어요. 가까운 선생님께 바로 말씀드려요.");
+  } finally {
+    setTimeout(() => { button.disabled = false; }, 3000);
+  }
+}
+
+async function handleAbuseSubmit(event) {
+  event.preventDefault();
+  const message = $("#abuse-message");
+  if (!currentUser || isTeacher(currentProfile, currentUser)) return;
+  const text = $("#abuse-text").value.trim();
+  if (!selectedCategories.size) return setMessage(message, "1번에서 어떤 일이었는지 하나 이상 골라 주세요.");
+  if (!selectedPeople.length) return setMessage(message, "2번에서 관련된 친구를 한 명 이상 골라 주세요.");
+  if (!text) return setMessage(message, "3번에 언제, 누가, 누구에게, 뭐라고 했는지 적어 주세요.");
+  if (Date.now() - lastReportAt.abuse < 15000) return setMessage(message, "방금 신고했어요. 잠시 뒤에 다시 보내 주세요.");
+  const button = $("#abuse-submit");
+  button.disabled = true;
+  setMessage(message, "보내는 중이에요.");
+  try {
+    await set(push(ref(db, "reports")), {
+      uid: currentUser.uid,
+      name: currentProfile?.name ?? "",
+      type: "abuse",
+      categories: [...selectedCategories].sort((a, b) => a - b),
+      people: [...selectedPeople],
+      text: text.slice(0, 1000),
+      createdAt: serverTimestamp(),
+    });
+    lastReportAt.abuse = Date.now();
+    void sendPhoneAlert("욕설 신고", "욕설·괴롭힘 신고가 들어왔어요. 앱에서 확인해 주세요.", false);
+    selectedCategories = new Set();
+    selectedPeople = [];
+    $("#abuse-text").value = "";
+    renderCategoryButtons();
+    renderPeopleChips();
+    setMessage(message, "신고했어요. 선생님이 보고 처리할게요. 말해 줘서 고마워요.");
+  } catch (error) {
+    setMessage(message, "보내지 못했어요. 잠시 뒤에 다시 해 주세요.");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// ── 선생님: 신고 목록·집계·알림 ─────────────────────────────
+
+function subscribeAdminReports() {
+  reportsSeen = null;
+  reportsLoadedAt = serverNow();
+  const recent = query(ref(db, "reports"), orderByChild("createdAt"), limitToLast(300));
+  unsubscribers.push(onValue(recent, (snapshot) => {
+    const list = [];
+    snapshot.forEach((child) => { list.push({ id: child.key, ...child.val() }); });
+    list.sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+    const fresh = reportsSeen ? list.filter((item) => !reportsSeen.has(item.id) && Number(item.createdAt ?? 0) >= reportsLoadedAt - 5000) : [];
+    reportsSeen = new Set(list.map((item) => item.id));
+    adminReports = list;
+    renderAdminReports();
+    if (fresh.length) alertTeacher(fresh);
+  }, () => {
+    $("#admin-report-list").innerHTML = `<p class="empty-text">신고를 불러오지 못했어요. DB 규칙을 확인해 주세요.</p>`;
+  }));
+}
+
+function alertTeacher(fresh) {
+  const urgent = fresh.some((item) => item.type === "intrusion");
+  const first = fresh[0];
+  const title = urgent ? "침입 신고가 들어왔어요" : "욕설 신고가 들어왔어요";
+  const body = `${first.name ?? "학생"} · ${formatClock(first.createdAt)}`;
+  showToast(`${title} (${body})`);
+  playAlertSound(urgent);
+  if (navigator.vibrate) navigator.vibrate(urgent ? [300, 120, 300, 120, 300] : [200]);
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(title, { body, tag: first.id, requireInteraction: urgent });
+    }
+  } catch (error) {
+    // 알림을 못 띄우는 브라우저면 화면 알림과 소리만 쓴다.
+  }
+}
+
+function playAlertSound(urgent) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const beeps = urgent ? 3 : 1;
+    for (let i = 0; i < beeps; i += 1) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const start = ctx.currentTime + i * 0.35;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(urgent ? 880 : 660, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.3);
+    }
+    setTimeout(() => ctx.close(), beeps * 400 + 200);
+  } catch (error) {
+    // 소리를 못 내는 환경이면 넘어간다.
+  }
+}
+
+function categoryName(no) {
+  const label = reportCategories[no - 1];
+  return label ? `${no}. ${label}` : `${no}번`;
+}
+
+function renderAdminReports() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const open = adminReports.filter((item) => item.status !== "done");
+  const intrusionOpen = open.filter((item) => item.type === "intrusion").length;
+  // 관련 학생 집계(욕설 신고 전체): 한 사람·당한 사람 구분 없이 몇 번 이름이 나왔는지
+  const tally = new Map();
+  for (const item of adminReports) {
+    if (item.type !== "abuse") continue;
+    const people = Array.isArray(item.people) ? item.people : Object.values(item.people ?? {});
+    for (const name of new Set(people)) tally.set(name, (tally.get(name) ?? 0) + 1);
+  }
+  const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko-KR"));
+  $("#report-summary").innerHTML = `
+    <div class="report-counts">
+      <div><strong>${open.length}</strong><span>처리 전</span></div>
+      <div class="${intrusionOpen ? "is-urgent" : ""}"><strong>${intrusionOpen}</strong><span>침입 (처리 전)</span></div>
+      <div><strong>${adminReports.filter((item) => item.type === "abuse").length}</strong><span>욕설 신고 전체</span></div>
+    </div>
+    <p class="report-tally-title">신고에 이름이 나온 학생</p>
+    ${ranked.length ? `<div class="chip-list">${ranked.map(([name, count]) => `<span class="chip">${escapeHtml(name)} <b>${count}</b></span>`).join("")}</div>` : `<p class="helper-text no-margin">아직 없어요.</p>`}`;
+
+  const shown = reportFilter === "open" ? open : adminReports;
+  $("#admin-report-list").innerHTML = shown.length
+    ? shown.map(renderAdminReport).join("")
+    : `<p class="empty-text">${reportFilter === "open" ? "처리할 신고가 없어요." : "아직 신고가 없어요."}</p>`;
+}
+
+function renderAdminReport(item) {
+  const id = escapeAttribute(item.id);
+  const done = item.status === "done";
+  const intrusion = item.type === "intrusion";
+  const categories = (Array.isArray(item.categories) ? item.categories : Object.values(item.categories ?? {})).map(categoryName);
+  const people = Array.isArray(item.people) ? item.people : Object.values(item.people ?? {});
+  return `
+    <article class="report-item${intrusion ? " is-intrusion" : ""}${done ? " is-done" : ""}">
+      <div class="quiz-head">
+        <span class="pill ${intrusion ? "pill-off" : "pill-time"}">${intrusion ? "침입" : "욕설·괴롭힘"}</span>
+        ${done ? `<span class="pill is-done">처리함</span>` : ""}
+        <span class="rank-meta">${formatClock(item.createdAt)} · 신고: ${escapeHtml(item.name ?? "학생")}</span>
+      </div>
+      ${categories.length ? `<p class="report-line"><b>무슨 일</b> ${escapeHtml(categories.join(", "))}</p>` : ""}
+      ${people.length ? `<p class="report-line"><b>관련 학생</b> ${escapeHtml(people.join(", "))}</p>` : ""}
+      ${item.text ? `<p class="report-text">${escapeHtml(item.text)}</p>` : ""}
+      <div class="admin-question-actions">
+        <button class="inline-action-button${done ? "" : " is-on"}" type="button" data-report-done="${id}" data-done="${done}">${done ? "처리 전으로" : "처리 완료"}</button>
+        <button class="inline-danger-button" type="button" data-report-delete="${id}">삭제</button>
+      </div>
+    </article>`;
+}
+
+async function handleAdminReportClick(event) {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const filter = event.target.closest("[data-report-filter]");
+  if (filter) {
+    reportFilter = filter.dataset.reportFilter;
+    document.querySelectorAll("[data-report-filter]").forEach((button) => button.classList.toggle("is-on", button === filter));
+    renderAdminReports();
+    return;
+  }
+  const doneButton = event.target.closest("[data-report-done]");
+  const deleteButton = event.target.closest("[data-report-delete]");
+  try {
+    if (doneButton) {
+      const id = doneButton.dataset.reportDone;
+      await update(ref(db, `reports/${id}`), doneButton.dataset.done === "true" ? { status: null, doneAt: null } : { status: "done", doneAt: serverTimestamp() });
+    } else if (deleteButton) {
+      if (!confirm("이 신고를 지울까요? 되돌릴 수 없어요.")) return;
+      await remove(ref(db, `reports/${deleteButton.dataset.reportDelete}`));
+    }
+  } catch (error) {
+    setMessage(adminMessage, authErrorMessage(error.code));
+  }
+}
+
+async function handleCategorySave(event) {
+  event.preventDefault();
+  if (!isTeacher(currentProfile, currentUser)) return;
+  const lines = $("#category-text").value.split("\n").map((line) => line.trim().slice(0, 80)).filter(Boolean).slice(0, 40);
+  try {
+    await set(ref(db, "settings/reportCategories"), lines.length ? lines : null);
+    setMessage(adminMessage, lines.length ? `신고 항목 ${lines.length}개를 저장했어요.` : "신고 항목을 비웠어요. 학생 화면에는 1번~28번만 보여요.");
+  } catch (error) {
+    setMessage(adminMessage, authErrorMessage(error.code));
+  }
+}
+
+function renderNtfyTopic() {
+  const code = $("#ntfy-topic");
+  if (!code) return;
+  code.textContent = alertTopic || "아직 없어요";
+  $("#ntfy-create").textContent = alertTopic ? "알림 주소 새로 만들기" : "알림 주소 만들기";
+  $("#ntfy-test").disabled = !alertTopic;
+}
+
+async function handleNtfyCreate() {
+  if (!isTeacher(currentProfile, currentUser)) return;
+  if (alertTopic && !confirm("새 주소를 만들면 휴대폰 ntfy 앱에서도 새 주소로 다시 구독해야 해요. 만들까요?")) return;
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const topic = `mc25-${[...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  try {
+    await set(ref(db, "settings/alertTopic"), topic);
+    setMessage(adminMessage, "알림 주소를 만들었어요. ntfy 앱에서 이 주소를 구독해 주세요.");
+  } catch (error) {
+    setMessage(adminMessage, authErrorMessage(error.code));
+  }
+}
+
+async function handleNtfyTest() {
+  const ok = await sendPhoneAlert("테스트 알림", "아침 챌린지 신고 알림이 잘 와요.", false);
+  setMessage(adminMessage, ok ? "테스트 알림을 보냈어요. 휴대폰을 확인해 주세요." : "테스트 알림을 보내지 못했어요. 인터넷 연결을 확인해 주세요.");
+}
+
+async function handleNotifyEnable() {
+  if (!("Notification" in window)) {
+    $("#notify-status").textContent = "이 브라우저는 알림을 지원하지 않아요. 화면을 열어 두면 소리와 화면 알림은 와요.";
+    return;
+  }
+  const result = await Notification.requestPermission();
+  playAlertSound(false);
+  renderNotifyStatus(result);
+}
+
+function renderNotifyStatus(permission = ("Notification" in window ? Notification.permission : "unsupported")) {
+  const status = $("#notify-status");
+  if (!status) return;
+  status.textContent = permission === "granted"
+    ? "이 기기에서 알림이 켜져 있어요. 이 화면이 열려 있으면 신고가 들어올 때 소리와 알림이 와요."
+    : permission === "denied"
+      ? "알림이 막혀 있어요. 브라우저 설정에서 이 사이트 알림을 허용해 주세요. 화면 알림과 소리는 그대로 와요."
+      : "이 화면을 열어 두면 신고가 들어올 때 소리와 알림이 와요. 아래 버튼으로 기기 알림도 켤 수 있어요.";
+  $("#notify-enable").hidden = permission === "granted";
+}
+
 // ── 출석 체크 (월~금, 로그인하면 자동) ──────────────────────
 
 function subscribeAttendance() {
@@ -1313,6 +1742,8 @@ function subscribeAdminTools() {
   subscribeAdminPurchases();
   subscribeAdminAttendance();
   subscribeAdminQuiz();
+  subscribeAdminReports();
+  renderNotifyStatus();
 }
 
 function subscribeAdminStudents() {

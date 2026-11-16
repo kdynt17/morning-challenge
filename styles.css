@@ -27,6 +27,7 @@
   --warn: #8a5a00;
   --warn-bg: #fdf1d6;
   --danger: #c4321f;
+  --danger-strong: #a52816;
   --danger-bg: #fbe9e6;
   --info-bg: #e6ddff;
 
@@ -828,6 +829,222 @@ body.is-teacher .header-points { display: none; }
 
 #admin-message:empty { display: none; }
 
+/* ── 신고 ── */
+
+.report-card h2 { font-size: 20px; }
+
+.report-urgent { border-color: var(--danger-bg); }
+
+.strong-danger {
+  min-height: 56px;
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-primary);
+  font-size: 17px;
+}
+
+.strong-danger:hover:not(:disabled) { border-color: var(--danger-strong); background: var(--danger-strong); }
+
+.report-message { color: var(--ink-2); font-size: 15px; font-weight: 600; }
+.report-message:empty { display: none; }
+
+.report-form { display: grid; gap: 20px; }
+
+.report-step {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.report-step legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 0;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.report-step legend small { color: var(--ink-3); font-size: 13px; font-weight: 500; }
+
+.step-no {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+}
+
+.category-grid:has(.category-label) { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+
+.category-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.category-grid:not(:has(.category-label)) .category-button { justify-content: center; padding: 8px 4px; }
+
+.category-button:hover { border-color: var(--primary); }
+
+.category-button.is-on {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.category-no { font-variant-numeric: tabular-nums; }
+.category-label { min-width: 0; font-weight: 500; line-height: 1.35; }
+.category-button:has(.category-label) .category-no { color: var(--primary); font-weight: 700; }
+.category-button.is-on .category-no { color: var(--on-primary); }
+
+.people-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.people-chips:empty { display: none; }
+
+.person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.person-chip button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.person-chip button:hover { background: var(--surface); }
+
+.people-input-wrap { position: relative; }
+
+.people-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 6;
+  display: grid;
+  max-height: 240px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.people-suggestions button {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font-size: 16px;
+  text-align: left;
+}
+
+.people-suggestions button:hover,
+.people-suggestions button:focus-visible { background: var(--primary-soft); }
+
+#abuse-text { min-height: 120px; }
+
+/* 선생님 신고 대시보드 */
+.report-summary { display: grid; gap: 12px; }
+
+.report-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+.report-counts > div {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  text-align: center;
+}
+
+.report-counts strong { color: var(--ink); font-size: 22px; font-variant-numeric: tabular-nums; }
+.report-counts span { color: var(--ink-3); font-size: 13px; }
+.report-counts .is-urgent { background: var(--danger-bg); }
+.report-counts .is-urgent strong,
+.report-counts .is-urgent span { color: var(--danger); }
+
+.report-tally-title { color: var(--ink-2); font-size: 14px; font-weight: 600; }
+.report-summary .chip b { margin-left: 4px; color: var(--primary); }
+
+.report-filter { display: flex; gap: 8px; }
+
+.report-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  min-width: 0;
+}
+
+.report-item.is-intrusion { background: var(--danger-bg); }
+.report-item.is-done { opacity: 0.65; }
+.report-line { color: var(--ink-2); font-size: 14px; overflow-wrap: anywhere; }
+.report-line b { margin-right: 6px; color: var(--ink); }
+.report-text { color: var(--ink); font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.ntfy-box summary { cursor: pointer; color: var(--ink-2); font-size: 14px; font-weight: 600; }
+.ntfy-box[open] { display: grid; gap: 10px; }
+.ntfy-steps { display: grid; gap: 4px; margin: 0; padding-left: 20px; color: var(--ink-2); font-size: 14px; }
+.ntfy-topic { display: grid; gap: 4px; color: var(--ink-3); font-size: 13px; }
+.ntfy-topic code {
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 /* ── 아래 메뉴 ── */
 
 .bottom-nav {
@@ -837,7 +1054,8 @@ body.is-teacher .header-points { display: none; }
   left: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   width: min(100%, 560px);
   margin: 0 auto;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
@@ -845,7 +1063,6 @@ body.is-teacher .header-points { display: none; }
   background: var(--surface);
 }
 
-.bottom-nav:has(#admin-nav-button:not([hidden])) { grid-template-columns: repeat(5, 1fr); }
 
 .bottom-nav button {
   display: grid;
