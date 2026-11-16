@@ -98,14 +98,16 @@ const g1 = getDatabase(initializeApp({ ...opts, databaseAuthVariableOverride: { 
 await assert.rejects(g1.ref("users/g1/status").set("approved"));
 await teacher.ref().update({ "users/g1/status": "linked", "users/g1/linkedTo": "bob", "users/bob/googleEmail": school });
 // 신고: 승인된 학생만, 자기 이름·서버 시각으로만 쓰고, 읽기·처리는 선생님만
-const report = (extra) => ({ uid: "bob", name: "밥", type: "abuse", categories: [1, 3], people: ["에이미", "이브"], text: "점심시간에 욕했어요", createdAt: T, ...extra });
+const report = (extra) => ({ uid: "bob", name: "밥", type: "abuse", speakers: ["에이미"], targets: ["나", "주변 사람들"], date: "2026-11-16", when: "쉬는 시간", where: "우리 반 교실", kinds: ["욕설"], text: "지나가면서 욕했어요", feelings: ["화가 났다"], level: 4, responses: ["자리를 피했다"], createdAt: T, ...extra });
 await bob.ref("reports/r1").set(report());
 await bob.ref("reports/r2").set({ uid: "bob", name: "밥", type: "intrusion", createdAt: T });
 await assert.rejects(bob.ref("reports/r3").set(report({ name: "에이미" })));
 await assert.rejects(bob.ref("reports/r4").set(report({ uid: "amy" })));
 await assert.rejects(bob.ref("reports/r5").set(report({ createdAt: Date.now() - 600000 })));
 await assert.rejects(bob.ref("reports/r6").set(report({ type: "other" })));
-await assert.rejects(bob.ref("reports/r7").set(report({ categories: [99] })));
+await assert.rejects(bob.ref("reports/r7").set(report({ level: 9 })));
+await assert.rejects(bob.ref("reports/r7b").set(report({ date: "어제" })));
+await assert.rejects(bob.ref("reports/r7c").set(report({ speakers: ["가".repeat(31)] })));
 await assert.rejects(bob.ref("reports/r8").set(report({ status: "done" })));
 await assert.rejects(bob.ref("reports/r9").set(report({ secret: "x" })));
 await assert.rejects(eve.ref("reports/r10").set({ uid: "eve", name: "이브", type: "intrusion", createdAt: T }));
@@ -116,6 +118,12 @@ assert.equal((await teacher.ref("reports").get()).numChildren(), 2);
 await teacher.ref("reports/r1").update({ status: "done", doneAt: Date.now() });
 await assert.rejects(teacher.ref("reports/r1").update({ type: "intrusion" }));
 await teacher.ref("reports/r2").remove();
+// 명단: 승인된 학생만 읽고 선생님만 고친다
+await assert.rejects(bob.ref("roster").set({ "20501": "가짜" }));
+await teacher.ref("roster").set({ "20501": "강재준", "20502": "김다진" });
+assert.equal((await bob.ref("roster/20502").get()).val(), "김다진");
+await assert.rejects(eve.ref("roster").get());
+await assert.rejects(teacher.ref("roster").set({ "abc": "이름" }));
 // 신고 항목·알림 주소는 선생님만 정하고, 학생은 읽기만
 await assert.rejects(bob.ref("settings/reportCategories").set(["욕"]));
 await teacher.ref("settings/reportCategories").set(["외모 놀리기", "부모님 욕"]);

@@ -224,6 +224,13 @@
         }
       }
     },
+    "roster": {
+      ".read": "auth != null && ((!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') || (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher'))",
+      ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+      "$no": {
+        ".validate": "$no.matches(/^[0-9]{1,8}$/) && newData.isString() && newData.val().length >= 1 && newData.val().length <= 30"
+      }
+    },
     "reports": {
       ".read": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
       ".indexOn": [
@@ -244,7 +251,7 @@
         "people": {
           ".validate": "newData.hasChildren()",
           "$i": {
-            ".validate": "newData.isString() && newData.val().length <= 30"
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 30"
           }
         },
         "status": {
@@ -255,6 +262,48 @@
         },
         "$other": {
           ".validate": "$other == 'uid' || $other == 'name' || $other == 'type' || $other == 'createdAt'"
+        },
+        "speakers": {
+          ".validate": "newData.hasChildren()",
+          "$i": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 30"
+          }
+        },
+        "targets": {
+          ".validate": "newData.hasChildren()",
+          "$i": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 30"
+          }
+        },
+        "kinds": {
+          ".validate": "newData.hasChildren()",
+          "$i": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+          }
+        },
+        "feelings": {
+          ".validate": "newData.hasChildren()",
+          "$i": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+          }
+        },
+        "responses": {
+          ".validate": "newData.hasChildren()",
+          "$i": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
+          }
+        },
+        "date": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+        },
+        "when": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "where": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "level": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5"
         }
       }
     },
