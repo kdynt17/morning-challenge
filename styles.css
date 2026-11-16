@@ -885,19 +885,15 @@ body.is-teacher .header-points { display: none; }
   font-weight: 700;
 }
 
-.category-grid {
+.pick-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.pick-grid.names {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
 }
 
-.category-grid:has(.category-label) { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-
-.category-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 48px;
+.pick {
+  min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
@@ -905,89 +901,44 @@ body.is-teacher .header-points { display: none; }
   color: var(--ink);
   font-size: 15px;
   font-weight: 600;
-  text-align: left;
+  line-height: 1.3;
   transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 
-.category-grid:not(:has(.category-label)) .category-button { justify-content: center; padding: 8px 4px; }
+.pick-grid.names .pick { padding: 8px 4px; }
+.pick-grid.chips .pick,
+.pick-grid.inline .pick { border-radius: var(--r-pill); font-weight: 500; }
+.pick.is-extra { border-style: dashed; color: var(--ink-2); font-weight: 500; }
+.pick:hover { border-color: var(--primary); }
 
-.category-button:hover { border-color: var(--primary); }
-
-.category-button.is-on {
+.pick.is-on {
   border-color: var(--primary);
+  border-style: solid;
   background: var(--primary);
   color: var(--on-primary);
 }
 
-.category-no { font-variant-numeric: tabular-nums; }
-.category-label { min-width: 0; font-weight: 500; line-height: 1.35; }
-.category-button:has(.category-label) .category-no { color: var(--primary); font-weight: 700; }
-.category-button.is-on .category-no { color: var(--on-primary); }
+.pick-other { min-height: 44px; font-size: 15px; }
 
-.people-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.people-chips:empty { display: none; }
+.date-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.date-row input { width: auto; min-width: 160px; }
 
-.person-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 4px 4px 12px;
-  border-radius: var(--r-pill);
-  background: var(--primary-soft);
-  color: var(--primary-hover);
-  font-size: 15px;
-  font-weight: 600;
-}
+.level-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink-3); font-size: 13px; }
+.pick-grid.level { flex-wrap: nowrap; }
+.pick-grid.level .pick { width: 44px; padding: 0; border-radius: var(--r-pill); font-variant-numeric: tabular-nums; }
 
-.person-chip button {
+.report-more {
   display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: inherit;
-  font-size: 18px;
-  line-height: 1;
-}
-
-.person-chip button:hover { background: var(--surface); }
-
-.people-input-wrap { position: relative; }
-
-.people-suggestions {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  left: 0;
-  z-index: 6;
-  display: grid;
-  max-height: 240px;
-  margin: 0;
-  padding: 4px;
-  overflow-y: auto;
-  list-style: none;
-  border: 1px solid var(--line-strong);
+  gap: 16px;
+  padding: 12px 16px;
   border-radius: var(--r-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-2);
+  background: var(--bg);
 }
 
-.people-suggestions button {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink);
-  font-size: 16px;
-  text-align: left;
-}
-
-.people-suggestions button:hover,
-.people-suggestions button:focus-visible { background: var(--primary-soft); }
+.report-more summary { cursor: pointer; color: var(--ink-2); font-size: 15px; font-weight: 600; }
+.report-more[open] summary { margin-bottom: 12px; }
+.report-more .report-step + .report-step { margin-top: 16px; }
+.more-label { color: var(--ink); font-size: 15px; font-weight: 600; }
 
 #abuse-text { min-height: 120px; }
 

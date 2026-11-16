@@ -1,4 +1,4 @@
-import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261116-report";
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261116-names";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -146,19 +146,10 @@ if (setupRequired) {
   $("#admin-question-list").addEventListener("click", handleAdminQuestionClick);
   $("#intrusion-button").addEventListener("click", handleIntrusion);
   $("#abuse-form").addEventListener("submit", handleAbuseSubmit);
-  $("#abuse-categories").addEventListener("click", handleCategoryClick);
-  $("#people-input").addEventListener("keydown", handlePeopleKey);
-  $("#people-input").addEventListener("input", renderPeopleSuggestions);
-  $("#people-input").addEventListener("focus", async (event) => {
-    // 휴대폰 자판이 이름 목록을 가리지 않게 입력 칸을 화면 가운데로 올린다.
-    setTimeout(() => event.target.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
-    await loadStudentNames();
-    renderPeopleSuggestions();
-  });
-  $("#people-input").addEventListener("blur", () => setTimeout(renderPeopleSuggestions, 150));
-  $("#report-page").addEventListener("click", handlePeopleClick);
+  $("#abuse-form").addEventListener("click", handlePickClick);
+  $("#abuse-form").addEventListener("keydown", (event) => { if (event.target.matches("[data-other]")) handlePickOther(event); });
   $("#admin-page").addEventListener("click", handleAdminReportClick);
-  $("#category-form").addEventListener("submit", handleCategorySave);
+  $("#roster-form").addEventListener("submit", handleRosterSave);
   $("#ntfy-create").addEventListener("click", handleNtfyCreate);
   $("#ntfy-test").addEventListener("click", handleNtfyTest);
   $("#notify-enable").addEventListener("click", handleNotifyEnable);
@@ -955,130 +946,112 @@ function formatClock(ms) {
 // 신고는 선생님만 읽는다(reports). 침입 신고는 선생님 화면에 소리·알림을 띄우고,
 // 선생님이 ntfy 알림 주소를 만들어 두었으면 휴대폰에도 "신고가 들어왔어요"만 보낸다(이름·내용은 안 보냄).
 
-const DEFAULT_CATEGORY_COUNT = 28;
 const REPORT_COOLDOWN_MS = 60000;
-let reportCategories = [];
+// 구글 설문 '2학년 5반 언어생활 기록'과 같은 질문을 누르기만 하면 되게 만든다.
+const REPORT_OPTIONS = {
+  dateQuick: ["오늘", "어제"],
+  when: ["수업 중", "쉬는 시간", "점심시간", "아침 조회 전", "종례 후", "방과 후"],
+  where: ["우리 반 교실", "복도", "급식실", "운동장", "체육관", "화장실 앞", "카톡·SNS", "학교 앞", "학원", "기타"],
+  kinds: ["욕설", "놀리거나 비꼬는 말", "무시하거나 비하하는 말", "외모에 관한 말", "가족에 관한 말", "성적인 말", "위협하는 말", "기타"],
+  feelings: ["불쾌했다", "기분이 나빴다", "화가 났다", "속상했다", "당황했다", "창피했다", "무서웠다", "걱정됐다", "별 느낌은 없었지만 말이 심했다"],
+  level: ["1", "2", "3", "4", "5"],
+  responses: ["그냥 지나갔다", "하지 말라고 말했다", "자리를 피했다", "친구에게 이야기했다", "선생님께 말했다", "같이 말다툼했다", "아무 말도 못 했다", "웃고 넘겼다"],
+};
+const NAME_EXTRAS = { speakers: ["모르는 사람"], targets: ["나", "주변 사람들", "불특정 다수"] };
 let alertTopic = "";
-let studentNames = [];
-let selectedPeople = [];
-let selectedCategories = new Set();
+let rosterNames = [];
+let reportPicks = newReportPicks();
+let customNames = { speakers: [], targets: [] };
 let lastReportAt = { intrusion: 0, abuse: 0 };
 let adminReports = [];
 let reportFilter = "open";
 let reportsSeen = null;
 let reportsLoadedAt = 0;
 
+function newReportPicks() {
+  return { speakers: new Set(), targets: new Set(), kinds: new Set(), feelings: new Set(), responses: new Set(), when: "", where: "", level: "", dateQuick: "오늘" };
+}
+
 function subscribeReportSettings() {
-  unsubscribers.push(onValue(ref(db, "settings/reportCategories"), (snapshot) => {
-    const value = snapshot.val();
-    reportCategories = (Array.isArray(value) ? value : Object.values(value ?? {})).map((item) => String(item ?? "").trim()).filter(Boolean);
-    renderCategoryButtons();
-    if (isTeacher(currentProfile, currentUser) && document.activeElement !== $("#category-text")) {
-      $("#category-text").value = reportCategories.join("\n");
-    }
-  }, () => {}));
   unsubscribers.push(onValue(ref(db, "settings/alertTopic"), (snapshot) => {
     alertTopic = typeof snapshot.val() === "string" ? snapshot.val() : "";
     renderNtfyTopic();
   }, () => {}));
+  // 명단은 승인된 학생만 읽는다(roster). 번호 순서로 이름 버튼을 만든다.
+  unsubscribers.push(onValue(ref(db, "roster"), (snapshot) => {
+    const roster = snapshot.val() ?? {};
+    const entries = Object.entries(roster).sort(([a], [b]) => a.localeCompare(b));
+    rosterNames = entries.map(([, name]) => String(name ?? "").trim()).filter(Boolean);
+    renderReportPickers();
+    if (isTeacher(currentProfile, currentUser) && document.activeElement !== $("#roster-text")) {
+      $("#roster-text").value = entries.map(([no, name]) => `${no} ${name}`).join("\n");
+    }
+  }, () => {}));
+  resetReportDate();
 }
 
-function categoryLabels() {
-  return reportCategories.length
-    ? reportCategories
-    : Array.from({ length: DEFAULT_CATEGORY_COUNT }, (_, index) => "");
+function resetReportDate() {
+  const input = $("#abuse-date");
+  if (input) input.value = todayKey();
 }
 
-function renderCategoryButtons() {
-  const root = $("#abuse-categories");
-  if (!root) return;
-  root.innerHTML = categoryLabels().map((label, index) => {
-    const no = index + 1;
-    const on = selectedCategories.has(no);
-    return `<button type="button" class="category-button${on ? " is-on" : ""}" data-category="${no}" aria-pressed="${on}"><span class="category-no">${no}</span>${label ? `<span class="category-label">${escapeHtml(label)}</span>` : ""}</button>`;
-  }).join("");
+function pickOptions(group) {
+  if (group === "speakers" || group === "targets") {
+    return [...rosterNames, ...NAME_EXTRAS[group], ...customNames[group]];
+  }
+  return REPORT_OPTIONS[group] ?? [];
 }
 
-function handleCategoryClick(event) {
-  const button = event.target.closest("[data-category]");
+function isPicked(group, value) {
+  const picked = reportPicks[group];
+  return picked instanceof Set ? picked.has(value) : picked === value;
+}
+
+function renderReportPickers() {
+  document.querySelectorAll("#abuse-form [data-group]").forEach((root) => {
+    const group = root.dataset.group;
+    const options = pickOptions(group);
+    root.innerHTML = options.length
+      ? options.map((value) => {
+          const on = isPicked(group, value);
+          const extra = NAME_EXTRAS[group]?.includes(value);
+          return `<button type="button" class="pick${on ? " is-on" : ""}${extra ? " is-extra" : ""}" data-pick="${escapeAttribute(value)}" aria-pressed="${on}">${escapeHtml(value)}</button>`;
+        }).join("")
+      : `<p class="helper-text no-margin">선생님이 명단을 올리면 이름이 나와요. 아래 칸에 이름을 써도 돼요.</p>`;
+  });
+}
+
+function handlePickClick(event) {
+  const button = event.target.closest("[data-pick]");
   if (!button) return;
-  const no = Number(button.dataset.category);
-  if (selectedCategories.has(no)) selectedCategories.delete(no);
-  else selectedCategories.add(no);
-  button.classList.toggle("is-on", selectedCategories.has(no));
-  button.setAttribute("aria-pressed", String(selectedCategories.has(no)));
-}
-
-// 우리 반 이름 목록(순위표에 있는 승인된 학생)으로 자동완성
-async function loadStudentNames() {
-  if (studentNames.length) return;
-  try {
-    const snapshot = await get(ref(db, "leaderboardUsers"));
-    const names = new Set();
-    snapshot.forEach((child) => {
-      const name = String(child.val()?.name ?? "").trim();
-      if (name && !isHiddenUid(child.key)) names.add(name);
-    });
-    studentNames = [...names].sort((a, b) => a.localeCompare(b, "ko-KR"));
-  } catch (error) {
-    studentNames = [];
+  const root = button.closest("[data-group]");
+  const group = root.dataset.group;
+  const value = button.dataset.pick;
+  if (root.dataset.multi === "true") {
+    const set = reportPicks[group];
+    if (set.has(value)) set.delete(value);
+    else set.add(value);
+  } else {
+    reportPicks[group] = reportPicks[group] === value ? "" : value;
+    if (group === "dateQuick") {
+      const day = new Date(serverNow() - (value === "어제" ? DAY_MS : 0));
+      $("#abuse-date").value = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(day);
+    }
   }
+  renderReportPickers();
 }
 
-function renderPeopleChips() {
-  $("#people-chips").innerHTML = selectedPeople.map((name, index) => `
-    <span class="person-chip">${escapeHtml(name)}<button type="button" data-remove-person="${index}" aria-label="${escapeAttribute(name)} 빼기">×</button></span>`).join("");
-}
-
-function addPerson(name) {
-  const clean = String(name ?? "").trim().slice(0, 30);
-  if (!clean || selectedPeople.includes(clean) || selectedPeople.length >= 30) return;
-  selectedPeople.push(clean);
-  renderPeopleChips();
-}
-
-function renderPeopleSuggestions() {
-  const input = $("#people-input");
-  const list = $("#people-suggestions");
-  const keyword = input.value.trim();
-  const matches = studentNames
-    .filter((name) => !selectedPeople.includes(name) && (!keyword || name.includes(keyword)))
-    .slice(0, keyword ? 8 : 40);
-  if (!matches.length || document.activeElement !== input) {
-    list.hidden = true;
-    return;
-  }
-  list.innerHTML = matches.map((name) => `<li role="option"><button type="button" data-add-person="${escapeAttribute(name)}">${escapeHtml(name)}</button></li>`).join("");
-  list.hidden = false;
-}
-
-function handlePeopleKey(event) {
-  if (event.key !== "Enter" && event.key !== ",") return;
+function handlePickOther(event) {
+  if (event.key !== "Enter") return;
   event.preventDefault();
   const input = event.target;
-  const keyword = input.value.replace(/,/g, "").trim();
-  if (!keyword) return;
-  // 이름 일부만 쳤고 목록에 딱 하나 맞으면 그 이름을 넣는다.
-  const matches = studentNames.filter((name) => name.includes(keyword) && !selectedPeople.includes(name));
-  addPerson(matches.length === 1 ? matches[0] : keyword);
+  const group = input.dataset.other;
+  const name = input.value.trim().slice(0, 30);
+  if (!name) return;
+  if (!pickOptions(group).includes(name)) customNames[group].push(name);
+  reportPicks[group].add(name);
   input.value = "";
-  renderPeopleSuggestions();
-}
-
-function handlePeopleClick(event) {
-  const add = event.target.closest("[data-add-person]");
-  if (add) {
-    addPerson(add.dataset.addPerson);
-    $("#people-input").value = "";
-    $("#people-input").focus();
-    renderPeopleSuggestions();
-    return;
-  }
-  const remove = event.target.closest("[data-remove-person]");
-  if (remove) {
-    selectedPeople.splice(Number(remove.dataset.removePerson), 1);
-    renderPeopleChips();
-  }
+  renderReportPickers();
 }
 
 async function sendPhoneAlert(title, message, urgent) {
@@ -1127,31 +1100,44 @@ async function handleAbuseSubmit(event) {
   const message = $("#abuse-message");
   if (!currentUser || isTeacher(currentProfile, currentUser)) return;
   const text = $("#abuse-text").value.trim();
-  if (!selectedCategories.size) return setMessage(message, "1번에서 어떤 일이었는지 하나 이상 골라 주세요.");
-  if (!selectedPeople.length) return setMessage(message, "2번에서 관련된 친구를 한 명 이상 골라 주세요.");
-  if (!text) return setMessage(message, "3번에 언제, 누가, 누구에게, 뭐라고 했는지 적어 주세요.");
+  const date = $("#abuse-date").value;
+  if (!reportPicks.speakers.size) return setMessage(message, "1번: 누가 그 말을 했는지 골라 주세요.");
+  if (!reportPicks.targets.size) return setMessage(message, "2번: 누구에게 한 말인지 골라 주세요.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setMessage(message, "3번: 날짜를 골라 주세요.");
+  if (!reportPicks.kinds.size) return setMessage(message, "5번: 어떤 말이었는지 하나 이상 골라 주세요.");
+  if (!text) return setMessage(message, "6번: 어떤 상황에서 어떤 말을 들었는지 적어 주세요.");
   if (Date.now() - lastReportAt.abuse < 15000) return setMessage(message, "방금 신고했어요. 잠시 뒤에 다시 보내 주세요.");
   const button = $("#abuse-submit");
   button.disabled = true;
   setMessage(message, "보내는 중이에요.");
+  const list = (set) => [...set];
   try {
     await set(push(ref(db, "reports")), {
       uid: currentUser.uid,
       name: currentProfile?.name ?? "",
       type: "abuse",
-      categories: [...selectedCategories].sort((a, b) => a - b),
-      people: [...selectedPeople],
+      speakers: list(reportPicks.speakers),
+      targets: list(reportPicks.targets),
+      date,
+      ...(reportPicks.when ? { when: reportPicks.when } : {}),
+      ...(reportPicks.where ? { where: reportPicks.where } : {}),
+      kinds: list(reportPicks.kinds),
       text: text.slice(0, 1000),
+      ...(reportPicks.feelings.size ? { feelings: list(reportPicks.feelings) } : {}),
+      ...(reportPicks.level ? { level: Number(reportPicks.level) } : {}),
+      ...(reportPicks.responses.size ? { responses: list(reportPicks.responses) } : {}),
       createdAt: serverTimestamp(),
     });
     lastReportAt.abuse = Date.now();
-    void sendPhoneAlert("욕설 신고", "욕설·괴롭힘 신고가 들어왔어요. 앱에서 확인해 주세요.", false);
-    selectedCategories = new Set();
-    selectedPeople = [];
+    void sendPhoneAlert("언어생활 신고", "욕설·불쾌한 말 신고가 들어왔어요. 앱에서 확인해 주세요.", false);
+    reportPicks = newReportPicks();
+    customNames = { speakers: [], targets: [] };
     $("#abuse-text").value = "";
-    renderCategoryButtons();
-    renderPeopleChips();
+    $("#abuse-form .report-more").open = false;
+    resetReportDate();
+    renderReportPickers();
     setMessage(message, "신고했어요. 선생님이 보고 처리할게요. 말해 줘서 고마워요.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
     setMessage(message, "보내지 못했어요. 잠시 뒤에 다시 해 주세요.");
   } finally {
@@ -1221,31 +1207,41 @@ function playAlertSound(urgent) {
   }
 }
 
-function categoryName(no) {
-  const label = reportCategories[no - 1];
-  return label ? `${no}. ${label}` : `${no}번`;
+function listOf(value) {
+  return Array.isArray(value) ? value : Object.values(value ?? {});
+}
+
+function tallyNames(key) {
+  const tally = new Map();
+  for (const item of adminReports) {
+    if (item.type !== "abuse") continue;
+    // '나'를 고른 신고는 신고한 학생 이름으로 센다.
+    const names = listOf(item[key]).map((name) => (name === "나" ? item.name : name));
+    for (const name of new Set(names)) {
+      if (!name || NAME_EXTRAS.speakers.includes(name) || NAME_EXTRAS.targets.includes(name)) continue;
+      tally.set(name, (tally.get(name) ?? 0) + 1);
+    }
+  }
+  return [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko-KR"));
+}
+
+function renderTally(title, ranked) {
+  return `<p class="report-tally-title">${title}</p>
+    ${ranked.length ? `<div class="chip-list">${ranked.map(([name, count]) => `<span class="chip">${escapeHtml(name)} <b>${count}</b></span>`).join("")}</div>` : `<p class="helper-text no-margin">아직 없어요.</p>`}`;
 }
 
 function renderAdminReports() {
   if (!isTeacher(currentProfile, currentUser)) return;
   const open = adminReports.filter((item) => item.status !== "done");
   const intrusionOpen = open.filter((item) => item.type === "intrusion").length;
-  // 관련 학생 집계(욕설 신고 전체): 한 사람·당한 사람 구분 없이 몇 번 이름이 나왔는지
-  const tally = new Map();
-  for (const item of adminReports) {
-    if (item.type !== "abuse") continue;
-    const people = Array.isArray(item.people) ? item.people : Object.values(item.people ?? {});
-    for (const name of new Set(people)) tally.set(name, (tally.get(name) ?? 0) + 1);
-  }
-  const ranked = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko-KR"));
   $("#report-summary").innerHTML = `
     <div class="report-counts">
       <div><strong>${open.length}</strong><span>처리 전</span></div>
       <div class="${intrusionOpen ? "is-urgent" : ""}"><strong>${intrusionOpen}</strong><span>침입 (처리 전)</span></div>
-      <div><strong>${adminReports.filter((item) => item.type === "abuse").length}</strong><span>욕설 신고 전체</span></div>
+      <div><strong>${adminReports.filter((item) => item.type === "abuse").length}</strong><span>언어생활 신고</span></div>
     </div>
-    <p class="report-tally-title">신고에 이름이 나온 학생</p>
-    ${ranked.length ? `<div class="chip-list">${ranked.map(([name, count]) => `<span class="chip">${escapeHtml(name)} <b>${count}</b></span>`).join("")}</div>` : `<p class="helper-text no-margin">아직 없어요.</p>`}`;
+    ${renderTally("말한 학생 (신고된 횟수)", tallyNames("speakers"))}
+    ${renderTally("들은 학생 (신고된 횟수)", tallyNames("targets"))}`;
 
   const shown = reportFilter === "open" ? open : adminReports;
   $("#admin-report-list").innerHTML = shown.length
@@ -1253,22 +1249,33 @@ function renderAdminReports() {
     : `<p class="empty-text">${reportFilter === "open" ? "처리할 신고가 없어요." : "아직 신고가 없어요."}</p>`;
 }
 
+function reportLine(label, value) {
+  const text = Array.isArray(value) ? value.join(", ") : value;
+  return text ? `<p class="report-line"><b>${label}</b> ${escapeHtml(String(text))}</p>` : "";
+}
+
 function renderAdminReport(item) {
   const id = escapeAttribute(item.id);
   const done = item.status === "done";
   const intrusion = item.type === "intrusion";
-  const categories = (Array.isArray(item.categories) ? item.categories : Object.values(item.categories ?? {})).map(categoryName);
-  const people = Array.isArray(item.people) ? item.people : Object.values(item.people ?? {});
+  const when = [item.date, item.when].filter(Boolean).join(" ");
   return `
     <article class="report-item${intrusion ? " is-intrusion" : ""}${done ? " is-done" : ""}">
       <div class="quiz-head">
-        <span class="pill ${intrusion ? "pill-off" : "pill-time"}">${intrusion ? "침입" : "욕설·괴롭힘"}</span>
+        <span class="pill ${intrusion ? "pill-off" : "pill-time"}">${intrusion ? "침입" : "언어생활"}</span>
         ${done ? `<span class="pill is-done">처리함</span>` : ""}
+        ${item.level ? `<span class="pill${Number(item.level) >= 4 ? " pill-off" : ""}">불편 ${Number(item.level)}/5</span>` : ""}
         <span class="rank-meta">${formatClock(item.createdAt)} · 신고: ${escapeHtml(item.name ?? "학생")}</span>
       </div>
-      ${categories.length ? `<p class="report-line"><b>무슨 일</b> ${escapeHtml(categories.join(", "))}</p>` : ""}
-      ${people.length ? `<p class="report-line"><b>관련 학생</b> ${escapeHtml(people.join(", "))}</p>` : ""}
+      ${reportLine("말한 사람", listOf(item.speakers))}
+      ${reportLine("들은 사람", listOf(item.targets).map((name) => (name === "나" ? `나(${item.name ?? "신고한 학생"})` : name)))}
+      ${reportLine("관련 학생", listOf(item.people))}
+      ${reportLine("언제", when)}
+      ${reportLine("어디서", item.where)}
+      ${reportLine("어떤 말", listOf(item.kinds))}
       ${item.text ? `<p class="report-text">${escapeHtml(item.text)}</p>` : ""}
+      ${reportLine("느낌", listOf(item.feelings))}
+      ${reportLine("대응", listOf(item.responses))}
       <div class="admin-question-actions">
         <button class="inline-action-button${done ? "" : " is-on"}" type="button" data-report-done="${id}" data-done="${done}">${done ? "처리 전으로" : "처리 완료"}</button>
         <button class="inline-danger-button" type="button" data-report-delete="${id}">삭제</button>
@@ -1300,13 +1307,22 @@ async function handleAdminReportClick(event) {
   }
 }
 
-async function handleCategorySave(event) {
+async function handleRosterSave(event) {
   event.preventDefault();
   if (!isTeacher(currentProfile, currentUser)) return;
-  const lines = $("#category-text").value.split("\n").map((line) => line.trim().slice(0, 80)).filter(Boolean).slice(0, 40);
+  const roster = {};
+  const bad = [];
+  for (const line of $("#roster-text").value.split("\n")) {
+    const text = line.trim();
+    if (!text) continue;
+    const match = text.match(/^(\d{1,8})[\s,.:\t]+(.{1,30})$/);
+    if (match) roster[match[1]] = match[2].trim();
+    else bad.push(text);
+  }
+  if (bad.length) return setMessage(adminMessage, `'번호 이름' 모양이 아닌 줄이 있어요: ${bad.slice(0, 3).join(" / ")}`);
   try {
-    await set(ref(db, "settings/reportCategories"), lines.length ? lines : null);
-    setMessage(adminMessage, lines.length ? `신고 항목 ${lines.length}개를 저장했어요.` : "신고 항목을 비웠어요. 학생 화면에는 1번~28번만 보여요.");
+    await set(ref(db, "roster"), Object.keys(roster).length ? roster : null);
+    setMessage(adminMessage, `명단 ${Object.keys(roster).length}명을 저장했어요.`);
   } catch (error) {
     setMessage(adminMessage, authErrorMessage(error.code));
   }
