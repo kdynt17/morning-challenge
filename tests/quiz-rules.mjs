@@ -97,6 +97,32 @@ await assert.rejects(asToken("g5", "g5", { email: "202620597@junghwa.sen.ms.kr",
 const g1 = getDatabase(initializeApp({ ...opts, databaseAuthVariableOverride: { uid: "g1", token: { email: school, email_verified: true } } }, "g1b"));
 await assert.rejects(g1.ref("users/g1/status").set("approved"));
 await teacher.ref().update({ "users/g1/status": "linked", "users/g1/linkedTo": "bob", "users/bob/googleEmail": school });
+// 신고: 승인된 학생만, 자기 이름·서버 시각으로만 쓰고, 읽기·처리는 선생님만
+const report = (extra) => ({ uid: "bob", name: "밥", type: "abuse", categories: [1, 3], people: ["에이미", "이브"], text: "점심시간에 욕했어요", createdAt: T, ...extra });
+await bob.ref("reports/r1").set(report());
+await bob.ref("reports/r2").set({ uid: "bob", name: "밥", type: "intrusion", createdAt: T });
+await assert.rejects(bob.ref("reports/r3").set(report({ name: "에이미" })));
+await assert.rejects(bob.ref("reports/r4").set(report({ uid: "amy" })));
+await assert.rejects(bob.ref("reports/r5").set(report({ createdAt: Date.now() - 600000 })));
+await assert.rejects(bob.ref("reports/r6").set(report({ type: "other" })));
+await assert.rejects(bob.ref("reports/r7").set(report({ categories: [99] })));
+await assert.rejects(bob.ref("reports/r8").set(report({ status: "done" })));
+await assert.rejects(bob.ref("reports/r9").set(report({ secret: "x" })));
+await assert.rejects(eve.ref("reports/r10").set({ uid: "eve", name: "이브", type: "intrusion", createdAt: T }));
+await assert.rejects(bob.ref("reports/r1/text").set("고쳐 쓰기"));
+await assert.rejects(bob.ref("reports").get());
+await assert.rejects(bob.ref("reports/r1").get());
+assert.equal((await teacher.ref("reports").get()).numChildren(), 2);
+await teacher.ref("reports/r1").update({ status: "done", doneAt: Date.now() });
+await assert.rejects(teacher.ref("reports/r1").update({ type: "intrusion" }));
+await teacher.ref("reports/r2").remove();
+// 신고 항목·알림 주소는 선생님만 정하고, 학생은 읽기만
+await assert.rejects(bob.ref("settings/reportCategories").set(["욕"]));
+await teacher.ref("settings/reportCategories").set(["외모 놀리기", "부모님 욕"]);
+assert.equal((await bob.ref("settings/reportCategories/1").get()).val(), "부모님 욕");
+await assert.rejects(teacher.ref("settings/alertTopic").set("짧음"));
+await teacher.ref("settings/alertTopic").set("mc25-0123456789abcdef01234567");
+await assert.rejects(bob.ref("settings/alertTopic").set("mc25-hackhackhackhackhack"));
 // 예전 게임 기록은 읽기 전용
 await assert.rejects(bob.ref("academy/history/bob/0").set({ 0: 5 }));
 console.log("quiz rules ok");
