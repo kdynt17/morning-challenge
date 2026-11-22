@@ -624,6 +624,33 @@ body.is-teacher .header-points { display: none; }
   vertical-align: 2px;
 }
 
+.my-rank {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+}
+
+.my-rank-no {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.my-rank-no small { margin-top: -8px; font-size: 12px; font-weight: 600; }
+.my-rank-title { color: var(--ink); font-size: 17px; font-weight: 700; }
+
 /* ── 상점 ── */
 
 .store-list { gap: 12px; }

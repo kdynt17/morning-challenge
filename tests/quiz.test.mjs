@@ -32,3 +32,8 @@ test("맞힌 순서는 서버 시각 순, 숨긴 계정 제외", () => {
   const order = correctOrder({ b: { name: "B", at: 20 }, a: { name: "A", at: 10 }, h: { name: "H", at: 1 } }, (uid) => uid === "h");
   assert.deepEqual(order.map((row) => [row.uid, row.rank]), [["a", 1], ["b", 2]]);
 });
+
+test("저장된 등수(정답 번호표)가 있으면 그 등수를 쓴다", () => {
+  const order = correctOrder({ a: { name: "A", at: 30, rank: 2 }, b: { name: "B", at: 40, rank: 1 } });
+  assert.deepEqual(order.map((row) => [row.uid, row.rank]), [["b", 1], ["a", 2]]);
+});

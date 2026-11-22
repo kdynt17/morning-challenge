@@ -1,4 +1,4 @@
-import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261116-simple";
+import { answerKey, textAnswerKeys, pointsForRank, correctOrder, isHiddenUid, MAX_RAW_ANSWER } from "./quiz.mjs?v=20261122-myrank";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   browserLocalPersistence,
@@ -575,9 +575,10 @@ function syncQuizSubscriptions() {
   for (const question of quizQuestions) {
     const qid = question.id;
     if (!teacher && !isVisibleQuestion(question)) continue;
+    // 정답자 명단은 선생님만 본다. 학생은 자기 기록(등수)만 읽는다.
     wanted.add(`correct:${qid}`);
-    watchQuiz(`correct:${qid}`, `quiz/correct/${qid}`, (value) => {
-      quizCorrect[qid] = value ?? {};
+    watchQuiz(`correct:${qid}`, teacher ? `quiz/correct/${qid}` : `quiz/correct/${qid}/${currentUser.uid}`, (value) => {
+      quizCorrect[qid] = teacher ? value ?? {} : value ? { [currentUser.uid]: value } : {};
       maybeResumeAward(qid);
       renderChallenge();
       renderAdminQuestions();
@@ -608,7 +609,9 @@ function questionById(qid) {
 }
 
 function myRankIn(qid) {
-  return correctOrder(quizCorrect[qid], isHiddenUid).find((row) => row.uid === currentUser?.uid)?.rank ?? null;
+  const mine = quizCorrect[qid]?.[currentUser?.uid];
+  if (Number.isFinite(Number(mine?.rank))) return Number(mine.rank);
+  return quizAwards[qid]?.rank ?? null;
 }
 
 // 홈: 오늘의 문제 카드 (예전 화면 그대로)
@@ -632,7 +635,7 @@ function renderChallenge() {
     status.textContent = "아직 공개 전";
     submit.disabled = true;
     setMessage(message, "");
-    $("#today-rank-list").innerHTML = `<p class="empty-text">아직 정답자가 없습니다.</p>`;
+    renderTodayRank(null);
     return;
   }
 
@@ -657,7 +660,7 @@ function renderChallenge() {
     status.textContent = "제출 완료";
     status.classList.add("is-done");
     submit.disabled = true;
-    const points = award?.points ?? pointsForRank(rank ?? order.length, question.firstPoints);
+    const points = award?.points ?? pointsForRank(rank ?? 1, question.firstPoints);
     setMessage(message, `정답입니다! ${rank ?? "-"}번째 정답으로 ${formatNumber(points)}점${award?.paid ? "을 받았습니다." : "을 받는 중입니다."}`);
   } else if (!question.open) {
     status.textContent = "마감";
@@ -679,15 +682,46 @@ function renderChallenge() {
     submit.disabled = submittingAnswer;
   }
 
-  $("#today-rank-list").innerHTML = order.length
-    ? order.map((row, index) => renderRankItem({
-        index,
-        name: row.name,
-        meta: formatClock(row.at),
-        value: `${formatNumber(pointsForRank(row.rank, question.firstPoints))}점`,
-        mine: row.uid === currentUser.uid,
-      })).join("")
-    : `<p class="empty-text">아직 정답자가 없습니다. 1등을 노려 보세요!</p>`;
+  renderTodayRank(question, order);
+}
+
+// 오늘 순위: 학생은 자기 등수만, 선생님은 맞힌 순서 전체
+function renderTodayRank(question, order = []) {
+  const teacher = isTeacher(currentProfile, currentUser);
+  const list = $("#today-rank-list");
+  $("#today-rank-title").textContent = teacher ? "오늘 정답 순서" : "오늘 내 순위";
+  if (!question) {
+    list.innerHTML = `<p class="empty-text">${teacher ? "아직 정답자가 없습니다." : "문제가 올라오면 여기에서 내 순위를 볼 수 있어요."}</p>`;
+    return;
+  }
+  if (teacher) {
+    list.innerHTML = order.length
+      ? order.map((row, index) => renderRankItem({
+          index,
+          name: row.name,
+          meta: formatClock(row.at),
+          value: `${formatNumber(pointsForRank(row.rank, question.firstPoints))}점`,
+          mine: false,
+        })).join("")
+      : `<p class="empty-text">아직 정답자가 없습니다.</p>`;
+    return;
+  }
+  const qid = question.id;
+  const mine = quizCorrect[qid]?.[currentUser.uid];
+  const rank = myRankIn(qid);
+  if (!mine || !rank) {
+    list.innerHTML = `<p class="empty-text">정답을 맞히면 몇 번째로 맞혔는지 여기에 나와요. 다른 친구의 순위는 보이지 않아요.</p>`;
+    return;
+  }
+  const points = quizAwards[qid]?.points ?? pointsForRank(rank, question.firstPoints);
+  list.innerHTML = `
+    <div class="my-rank">
+      <span class="my-rank-no">${rank}<small>등</small></span>
+      <div>
+        <p class="my-rank-title">오늘 ${rank}번째로 맞혔어요</p>
+        <p class="rank-meta">${formatClock(mine.at)} · +${formatNumber(points)}점</p>
+      </div>
+    </div>`;
 }
 
 let submittingAnswer = false;
@@ -722,12 +756,7 @@ async function handleAnswerSubmit(event) {
       return;
     }
     // 정답이면 DB 규칙이 받아 주고, 틀리면 거절한다.
-    let correct = true;
-    try {
-      await set(ref(db, `quiz/correct/${today}/${uid}`), { name, at: serverTimestamp() });
-    } catch (error) {
-      correct = false;
-    }
+    const correct = await claimCorrect(today, uid, name);
     if (!correct) {
       const remaining = await applyWrongAnswerPenalty();
       const left = Number(question.maxTries ?? MAX_TRIES) - (used + 1);
@@ -740,6 +769,28 @@ async function handleAnswerSubmit(event) {
     submittingAnswer = false;
     renderChallenge();
   }
+}
+
+// 정답 번호표: 맞힐 때마다 1씩 올라가는 quiz/counters/{날짜}를 1 올리면서 내 기록에 같은 번호(등수)를 적는다.
+// 두 사람이 같은 번호를 노리면 규칙이 한쪽을 거절하므로 번호를 다시 읽고 재시도한다.
+// 번호표가 그대로인데 거절되면 오답이다.
+async function claimCorrect(qid, uid, name) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const before = Number((await get(ref(db, `quiz/counters/${qid}`))).val() ?? 0);
+    const rank = before + 1;
+    try {
+      await update(ref(db), {
+        [`quiz/correct/${qid}/${uid}`]: { name, at: serverTimestamp(), rank },
+        [`quiz/counters/${qid}`]: rank,
+      });
+      return true;
+    } catch (error) {
+      const after = Number((await get(ref(db, `quiz/counters/${qid}`))).val() ?? 0);
+      if (after === before) return false;
+      await new Promise((resolve) => setTimeout(resolve, 80 + Math.random() * 200));
+    }
+  }
+  return false;
 }
 
 // 틀리면 10점 감점(0점 아래로는 안 내려감)
@@ -773,8 +824,8 @@ async function awardQuiz(question) {
     const awardRef = ref(db, `quiz/awards/${qid}/${uid}`);
     let award = (await get(awardRef)).val();
     if (!award) {
-      const order = correctOrder((await get(ref(db, `quiz/correct/${qid}`))).val(), isHiddenUid);
-      const rank = order.find((row) => row.uid === uid)?.rank ?? order.length + 1;
+      const record = (await get(ref(db, `quiz/correct/${qid}/${uid}`))).val();
+      const rank = Number(record?.rank) || Number((await get(ref(db, `quiz/counters/${qid}`))).val()) || 1;
       award = { rank, points: pointsForRank(rank, question.firstPoints), paid: false, at: serverTimestamp() };
       await set(awardRef, award);
     }
@@ -824,7 +875,7 @@ async function handleChallengeSave(event) {
         createdBy: currentUser.uid,
       },
       [`quiz/answers/${dateKey}`]: { keys: Object.fromEntries(keys.map((key) => [key, true])), display: answer },
-      ...(existing ? { [`quiz/attempts/${dateKey}`]: null, [`quiz/correct/${dateKey}`]: null, [`quiz/awards/${dateKey}`]: null } : {}),
+      ...(existing ? { [`quiz/attempts/${dateKey}`]: null, [`quiz/correct/${dateKey}`]: null, [`quiz/counters/${dateKey}`]: null, [`quiz/awards/${dateKey}`]: null } : {}),
     });
     event.target.reset();
     $("#admin-challenge-date").value = todayKey();
@@ -854,6 +905,7 @@ function deleteQuestion(qid) {
     [`quiz/answers/${qid}`]: null,
     [`quiz/attempts/${qid}`]: null,
     [`quiz/correct/${qid}`]: null,
+    [`quiz/counters/${qid}`]: null,
     [`quiz/awards/${qid}`]: null,
   });
 }

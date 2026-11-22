@@ -34,7 +34,11 @@ assert.equal((await bob.ref("quiz/questions/q1/text").get()).val(), "1+1?");
 await assert.rejects(eve.ref("quiz/questions").get());
 
 const attempt = (db, uid, qid, count, raw, type = "choice") => db.ref(`quiz/attempts/${qid}/${uid}`).set({ name: "x", count, last: answerKey(type, raw), raw: String(raw), at: T });
-const claim = (db, uid, name, qid) => db.ref(`quiz/correct/${qid}/${uid}`).set({ name, at: T });
+// 정답 등록은 번호표(quiz/counters)를 1 올리면서 같은 등수를 내 기록에 적는 한 번의 쓰기
+const claim = async (db, uid, name, qid, forceRank) => {
+  const rank = forceRank ?? Number((await root.ref(`quiz/counters/${qid}`).get()).val() ?? 0) + 1;
+  return db.ref().update({ [`quiz/correct/${qid}/${uid}`]: { name, at: T, rank }, [`quiz/counters/${qid}`]: rank });
+};
 
 // 객관식: 틀리면 맞혔다고 쓸 수 없고, 기회 1번이라 다시 낼 수 없다
 await attempt(bob, "bob", "q1", 1, 3);
@@ -58,14 +62,24 @@ await amy.ref("quiz/awards/q1/amy").set({ rank: 1, points: 100, paid: false, at:
 await assert.rejects(amy.ref("quiz/awards/q1/amy").set({ rank: 1, points: 50, paid: true }));
 await amy.ref("quiz/awards/q1/amy").update({ paid: true });
 await assert.rejects(amy.ref("quiz/awards/q1/amy").update({ paid: false }));
-// 맞힌 순서는 승인된 학생 모두 볼 수 있다
-assert.ok((await bob.ref("quiz/correct/q1").get()).exists());
+// 정답자 명단은 선생님만, 학생은 자기 기록만 읽는다(누가 몇 등인지 안 보임)
+await assert.rejects(bob.ref("quiz/correct/q1").get());
+await assert.rejects(bob.ref("quiz/correct/q1/amy").get());
+assert.equal((await amy.ref("quiz/correct/q1/amy/rank").get()).val(), 1);
+assert.ok((await teacher.ref("quiz/correct/q1").get()).exists());
+// 등수는 번호표 +1 만: 건너뛰거나 같은 등수를 또 쓰면 거절
+assert.equal((await amy.ref("quiz/counters/q1").get()).val(), 1);
 
 // 주관식: 띄어쓰기 달라도 정답, 기회 2번
 await attempt(bob, "bob", "q2", 1, "엽록체", "text");
 await assert.rejects(claim(bob, "bob", "밥", "q2"));
 await attempt(bob, "bob", "q2", 2, " 광 합성", "text");
+await assert.rejects(claim(bob, "bob", "밥", "q2", 3));
 await claim(bob, "bob", "밥", "q2");
+assert.equal((await bob.ref("quiz/correct/q2/bob/rank").get()).val(), 1);
+// 포인트 기록의 등수는 내 정답 기록의 등수와 같아야 한다
+await assert.rejects(bob.ref("quiz/awards/q2/bob").set({ rank: 2, points: 50, paid: false }));
+await bob.ref("quiz/awards/q2/bob").set({ rank: 1, points: 100, paid: false });
 
 // 잠금·마감 중에는 답을 낼 수 없다
 await teacher.ref().update({ "quiz/questions/q3": question(), "quiz/answers/q3": { keys: { c1: true }, display: "① 1" } });
@@ -83,7 +97,7 @@ await assert.rejects(bob.ref("quiz/attempts/q3/amy").get());
 await assert.rejects(bob.ref("quiz/attempts/q3").get());
 assert.ok((await teacher.ref("quiz/attempts/q3").get()).exists());
 // 선생님은 문제와 기록을 한꺼번에 지울 수 있다
-await teacher.ref().update({ "quiz/questions/q1": null, "quiz/answers/q1": null, "quiz/attempts/q1": null, "quiz/correct/q1": null, "quiz/awards/q1": null });
+await teacher.ref().update({ "quiz/questions/q1": null, "quiz/answers/q1": null, "quiz/attempts/q1": null, "quiz/correct/q1": null, "quiz/counters/q1": null, "quiz/awards/q1": null });
 // 새 가입은 인증된 학교 구글 계정(@junghwa.sen.ms.kr)만
 const asToken = (name, uid, token) => getDatabase(initializeApp({ ...opts, databaseAuthVariableOverride: { uid, token } }, name));
 const profile = (email) => ({ name: "새 학생", email, authEmail: email, role: "student", status: "pending", points: 0, todayResult: "-", loginProvider: "google" });

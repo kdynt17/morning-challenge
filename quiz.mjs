@@ -38,9 +38,10 @@ export function pointsForRank(rank, firstPoints = DEFAULT_FIRST_POINTS) {
 export function correctOrder(correct = {}, hidden = () => false) {
   return Object.entries(correct ?? {})
     .filter(([uid, row]) => row && !hidden(uid))
-    .map(([uid, row]) => ({ uid, name: row.name, at: Number(row.at ?? 0) }))
-    .sort((a, b) => a.at - b.at || a.uid.localeCompare(b.uid))
-    .map((row, index) => ({ ...row, rank: index + 1 }));
+    .map(([uid, row]) => ({ uid, name: row.name, at: Number(row.at ?? 0), saved: Number(row.rank) || 0 }))
+    .sort((a, b) => (a.saved && b.saved ? a.saved - b.saved : a.at - b.at) || a.uid.localeCompare(b.uid))
+    // 정답 번호표로 받은 등수가 있으면 그 등수를 쓴다(학생이 받은 점수와 같게).
+    .map(({ saved, ...row }, index) => ({ ...row, rank: saved || index + 1 }));
 }
 
 // 순위·명단에서 숨기는 테스트 계정(test1)

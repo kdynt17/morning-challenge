@@ -204,12 +204,20 @@
       },
       "correct": {
         "$qid": {
-          ".read": "auth != null && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved')",
+          ".read": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
           ".write": "auth != null && (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
           "$uid": {
             ".write": "auth != null && auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && root.child('quiz/questions').child($qid).child('open').val() == true && root.child('settings').child('gamesLocked').val() != true && !data.exists() && root.child('quiz/attempts').child($qid).child($uid).child('count').val() <= root.child('quiz/questions').child($qid).child('maxTries').val() && root.child('quiz/answers').child($qid).child('keys').child(root.child('quiz/attempts').child($qid).child($uid).child('last').val()).val() == true",
-            ".validate": "newData.hasChildren(['name','at']) && newData.child('name').val() == root.child('users').child($uid).child('name').val() && newData.child('at').val() == now"
+            ".validate": "newData.hasChildren(['name','at','rank']) && newData.child('name').val() == root.child('users').child($uid).child('name').val() && newData.child('at').val() == now && newData.child('rank').isNumber() && newData.child('rank').val() == newData.parent().parent().parent().child('counters').child($qid).val()",
+            ".read": "auth != null && auth.uid == $uid"
           }
+        }
+      },
+      "counters": {
+        ".read": "auth != null && ((!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') || (auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher'))",
+        "$qid": {
+          ".write": "auth != null && ((auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') || (root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && !root.child('quiz/correct').child($qid).child(auth.uid).exists() && newData.parent().parent().child('correct').child($qid).child(auth.uid).child('rank').val() == newData.val()))",
+          ".validate": "!newData.exists() || (newData.isNumber() && ((auth.token.email == 'admin@admin.com' || root.child('users').child(auth.uid).child('role').val() == 'teacher') || newData.val() == (data.exists() ? data.val() : 0) + 1))"
         }
       },
       "awards": {
@@ -219,7 +227,7 @@
           "$uid": {
             ".read": "auth != null && auth.uid == $uid",
             ".write": "auth != null && auth.uid == $uid && root.child('users').child(auth.uid).child('role').val() == 'student' && (!root.child('users').child(auth.uid).child('status').exists() || root.child('users').child(auth.uid).child('status').val() == 'approved') && root.child('quiz/correct').child($qid).child($uid).exists() && ((!data.exists() && newData.child('paid').val() == false) || (data.exists() && data.child('paid').val() == false && newData.child('paid').val() == true && newData.child('rank').val() == data.child('rank').val() && newData.child('points').val() == data.child('points').val()))",
-            ".validate": "newData.hasChildren(['rank','points','paid']) && newData.child('rank').isNumber() && newData.child('rank').val() >= 1 && newData.child('points').isNumber() && newData.child('points').val() >= 0 && newData.child('points').val() <= root.child('quiz/questions').child($qid).child('firstPoints').val() && newData.child('paid').isBoolean()"
+            ".validate": "newData.hasChildren(['rank','points','paid']) && newData.child('rank').isNumber() && newData.child('rank').val() >= 1 && newData.child('points').isNumber() && newData.child('points').val() >= 0 && newData.child('points').val() <= root.child('quiz/questions').child($qid).child('firstPoints').val() && newData.child('paid').isBoolean() && (!root.child('quiz/correct').child($qid).child($uid).child('rank').exists() || newData.child('rank').val() == root.child('quiz/correct').child($qid).child($uid).child('rank').val())"
           }
         }
       }
